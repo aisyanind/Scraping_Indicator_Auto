@@ -1,67 +1,111 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
   <base target="_top">
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto Scraping Indikator</title>
 
   <style>
     * { box-sizing: border-box; }
 
     :root {
       --orange: #E8720C;
-      --orange-dark: #B8560A;
+      --orange-dark: #C85A0A;
       --orange-darker: #8A3F06;
       --orange-tint: #FFF1E4;
       --orange-tint-strong: #FFE0C2;
       --border: #EBDDCC;
       --ink: #2A2016;
       --ink-soft: #8A7863;
-      --bg: #FBF7F2;
+      --ink-faint: #B8A898;
+      --bg: #F8F4F0;
       --card: #FFFFFF;
       --green: #1E7E34;
       --green-tint: #E7F5EA;
       --red: #B3261E;
       --red-tint: #FDECEC;
+      --blue: #1A4A7A;
+      --blue-tint: #E3EEF9;
+      --yellow: #856404;
+      --yellow-tint: #FFF3CD;
+
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 14px;
+
+      --shadow-sm: 0 1px 3px rgba(42, 32, 22, 0.06);
+      --shadow-md: 0 2px 8px rgba(42, 32, 22, 0.08);
+      --shadow-lg: 0 8px 30px rgba(0,0,0,0.15);
+
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 12px;
+      --space-lg: 16px;
+      --space-xl: 24px;
+      --space-2xl: 32px;
+
+      --fs-xs: 11px;
+      --fs-sm: 12px;
+      --fs-base: 13px;
+      --fs-md: 14px;
+      --fs-lg: 16px;
+      --fs-xl: 20px;
+
+      --transition: 0.2s ease;
     }
+
+    html { scroll-behavior: smooth; }
 
     body {
-      font-family: 'Segoe UI', Arial, sans-serif;
+      font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
       max-width: 1200px;
       margin: 0 auto;
-      padding: 0 16px 48px;
+      padding: 0 var(--space-lg) 48px;
       background: var(--bg);
       color: var(--ink);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
 
+    /* ====== TOPBAR ====== */
+
     .topbar {
-      margin: 0 -16px 24px;
-      padding: 22px 16px;
+      margin: 0 calc(-1 * var(--space-lg)) var(--space-xl);
+      padding: var(--space-xl) var(--space-lg);
       background: linear-gradient(135deg, var(--orange) 0%, var(--orange-dark) 100%);
       color: white;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: var(--space-lg);
     }
 
     .topbar-left h1 {
       margin: 0;
-      font-size: 20px;
+      font-size: var(--fs-xl);
       font-weight: 700;
-      letter-spacing: .2px;
+      letter-spacing: 0.2px;
     }
 
     .topbar-left p {
-      margin: 4px 0 0;
-      font-size: 13px;
-      color: #FFE7CE;
+      margin: var(--space-xs) 0 0;
+      font-size: var(--fs-sm);
+      color: rgba(255,255,255,0.75);
     }
 
     .worker-indicator {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
+      gap: var(--space-sm);
+      font-size: var(--fs-sm);
       white-space: nowrap;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.12);
+      padding: 6px 12px;
+      border-radius: 999px;
+      backdrop-filter: blur(4px);
     }
 
     .worker-dot {
@@ -70,59 +114,89 @@
       border-radius: 50%;
       display: inline-block;
       flex-shrink: 0;
+      transition: background var(--transition), box-shadow var(--transition);
     }
 
     .worker-dot.alive {
       background: #4CAF50;
-      box-shadow: 0 0 6px rgba(76, 175, 80, .6);
+      box-shadow: 0 0 8px rgba(76, 175, 80, 0.7);
     }
 
     .worker-dot.dead {
       background: #F44336;
-      box-shadow: 0 0 6px rgba(244, 67, 54, .6);
+      box-shadow: 0 0 8px rgba(244, 67, 54, 0.7);
     }
+
+    /* ====== CARDS ====== */
 
     .card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      box-shadow: 0 2px 10px rgba(138, 63, 6, .05);
-      margin-bottom: 20px;
+      border-radius: var(--radius-lg);
+      padding: var(--space-xl);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: var(--space-xl);
+      transition: box-shadow var(--transition);
     }
 
-    .card h2 {
-      margin: 0 0 16px;
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--orange-darker);
+    .card:hover {
+      box-shadow: var(--shadow-md);
+    }
+
+    .card-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-lg);
     }
 
-    .card h2::before {
-      content: "";
-      width: 4px;
-      height: 16px;
-      border-radius: 2px;
-      background: var(--orange);
-      display: inline-block;
+    .card-header .icon {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
     }
+
+    .card-header .icon.orange { background: var(--orange-tint); color: var(--orange-darker); }
+    .card-header .icon.blue { background: var(--blue-tint); color: var(--blue); }
+    .card-header .icon.green { background: var(--green-tint); color: var(--green); }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: var(--fs-lg);
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .card-header .badge-count {
+      margin-left: auto;
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+      font-size: var(--fs-xs);
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 999px;
+    }
+
+    /* ====== FORM ====== */
 
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
+      gap: var(--space-md);
     }
 
     .full { grid-column: 1 / -1; }
 
     label {
       display: block;
-      font-size: 13px;
+      font-size: var(--fs-sm);
       font-weight: 600;
-      margin-bottom: 6px;
+      margin-bottom: var(--space-xs);
       color: var(--ink);
     }
 
@@ -130,13 +204,14 @@
     textarea,
     select {
       width: 100%;
-      padding: 10px;
+      padding: 10px 12px;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       font: inherit;
+      font-size: var(--fs-base);
       background: white;
       color: var(--ink);
-      transition: border-color .15s, box-shadow .15s;
+      transition: border-color var(--transition), box-shadow var(--transition);
     }
 
     input:focus,
@@ -147,46 +222,128 @@
       box-shadow: 0 0 0 3px var(--orange-tint);
     }
 
-    textarea { min-height: 70px; }
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--ink-faint);
+    }
+
+    textarea { min-height: 70px; resize: vertical; }
+
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238A7863'%3E%3Cpath d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+      cursor: pointer;
+    }
 
     .hint {
-      font-size: 12px;
+      font-size: var(--fs-xs);
       color: var(--ink-soft);
-      margin-top: 6px;
+      margin-top: var(--space-xs);
+      line-height: 1.4;
     }
 
     .year-range {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: var(--space-md);
     }
 
     .sub-label {
-      font-size: 12px;
+      font-size: var(--fs-xs);
       font-weight: 600;
       color: var(--ink-soft);
-      margin-bottom: 5px;
+      margin-bottom: var(--space-xs);
     }
 
-    button {
-      padding: 10px 16px;
+    /* ====== SOURCE BLOCKS ====== */
+
+    .source-block {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-lg);
+      margin-bottom: var(--space-md);
+      background: #FFFDFB;
+      position: relative;
+      transition: border-color var(--transition);
+    }
+
+    .source-block:hover {
+      border-color: var(--orange-tint-strong);
+    }
+
+    .source-remove {
+      position: absolute;
+      top: var(--space-sm);
+      right: var(--space-md);
+      background: none;
       border: 0;
-      border-radius: 8px;
+      color: var(--red);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      transition: background var(--transition);
+    }
+
+    .source-remove:hover {
+      background: var(--red-tint);
+    }
+
+    .add-source-btn {
+      margin-top: var(--space-sm);
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+      border: 1px dashed var(--orange-tint-strong);
+      width: 100%;
+      padding: 10px;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: var(--fs-base);
+      cursor: pointer;
+      text-align: center;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .add-source-btn:hover {
+      background: var(--orange-tint-strong);
+      border-style: solid;
+    }
+
+    /* ====== BUTTONS ====== */
+
+    button {
+      padding: 10px 18px;
+      border: 0;
+      border-radius: var(--radius-md);
       cursor: pointer;
       font-weight: 600;
-      font-size: 13px;
-      transition: filter .15s, transform .05s;
+      font-size: var(--fs-base);
+      font-family: inherit;
+      transition: background var(--transition), transform 0.1s, opacity var(--transition);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-sm);
     }
 
     button:active { transform: translateY(1px); }
 
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .primary {
-      margin-top: 18px;
       background: var(--orange);
       color: white;
     }
 
-    .primary:hover { filter: brightness(1.05); }
+    .primary:hover:not(:disabled) { background: var(--orange-dark); }
 
     .secondary {
       background: var(--orange-tint);
@@ -194,30 +351,69 @@
       border: 1px solid var(--orange-tint-strong);
     }
 
-    .secondary:hover { background: var(--orange-tint-strong); }
+    .secondary:hover:not(:disabled) { background: var(--orange-tint-strong); }
 
     .danger {
       background: var(--red-tint);
       color: var(--red);
     }
 
-    .danger:disabled {
-      opacity: .6;
-      cursor: default;
+    .danger:hover:not(:disabled) { background: #FCD8D8; }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: var(--fs-sm);
     }
 
-    #status {
-      margin-top: 16px;
-      white-space: pre-wrap;
-      font-size: 14px;
+    .btn-lg {
+      padding: 12px 24px;
+      font-size: var(--fs-md);
     }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    .spinner.dark {
+      border-color: rgba(42, 32, 22, 0.15);
+      border-top-color: var(--ink-soft);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ====== FORM STATUS ====== */
+
+    #formStatus {
+      margin-top: var(--space-md);
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      font-size: var(--fs-md);
+      min-height: 24px;
+    }
+
+    #formStatus .msg { flex: 1; }
+
+    #formStatus .msg.error { color: var(--red); }
+    #formStatus .msg.success { color: var(--green); }
+    #formStatus .msg.info { color: var(--ink-soft); }
+
+    /* ====== TOOLBAR ====== */
 
     .toolbar {
       display: flex;
-      gap: 10px;
+      gap: var(--space-md);
       align-items: end;
       flex-wrap: wrap;
-      margin-bottom: 14px;
+      margin-bottom: var(--space-md);
     }
 
     .toolbar .filter {
@@ -227,32 +423,41 @@
 
     .toolbar .btn-group {
       display: flex;
-      gap: 8px;
+      gap: var(--space-sm);
       align-items: end;
+      flex-wrap: wrap;
     }
 
     .meta {
-      font-size: 13px;
+      font-size: var(--fs-sm);
       color: var(--ink-soft);
-      margin: 8px 0 14px;
+      margin: 0 0 var(--space-md);
+      padding: var(--space-sm) 0;
+      border-bottom: 1px solid var(--border);
     }
 
     .meta strong { color: var(--orange-darker); }
 
     .empty {
-      padding: 24px;
+      padding: var(--space-2xl);
       text-align: center;
       color: var(--ink-soft);
+      font-size: var(--fs-md);
     }
 
+    /* ====== BADGES ====== */
+
     .badge {
-      display: inline-block;
-      padding: 4px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
       border-radius: 999px;
-      font-size: 12px;
+      font-size: var(--fs-xs);
       font-weight: 700;
       background: var(--orange-tint);
       color: var(--orange-darker);
+      white-space: nowrap;
     }
 
     .badge-success {
@@ -276,73 +481,142 @@
     }
 
     .badge-login {
-      background: #E3EEF9;
-      color: #1A4A7A;
+      background: var(--blue-tint);
+      color: var(--blue);
     }
 
     .badge-warning {
-      background: #FFF3CD;
-      color: #856404;
+      background: var(--yellow-tint);
+      color: var(--yellow);
     }
+
+    .badge-sm {
+      padding: 1px 6px;
+      font-size: 10px;
+    }
+
+    /* ====== JOB LIST ====== */
 
     .job-list {
       display: grid;
-      gap: 8px;
+      gap: var(--space-sm);
     }
 
     .job {
       border: 1px solid var(--border);
-      border-radius: 9px;
-      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      padding: var(--space-md) var(--space-lg);
       display: flex;
       justify-content: space-between;
-      gap: 12px;
-      font-size: 13px;
+      align-items: center;
+      gap: var(--space-md);
+      font-size: var(--fs-base);
       background: white;
+      transition: border-color var(--transition), box-shadow var(--transition);
     }
 
-    .hidden { display: none; }
+    .job:hover {
+      border-color: var(--orange-tint-strong);
+      box-shadow: var(--shadow-sm);
+    }
 
-    /* ====== Kartu indikator ====== */
+    .job-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .job-info .code {
+      font-weight: 700;
+      font-size: var(--fs-md);
+      color: var(--ink);
+    }
+
+    .job-info .id {
+      font-size: var(--fs-xs);
+      color: var(--ink-soft);
+      word-break: break-all;
+    }
+
+    .job-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-shrink: 0;
+    }
+
+    .job-progress {
+      font-size: var(--fs-sm);
+      color: var(--ink-soft);
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .progress-bar {
+      width: 60px;
+      height: 6px;
+      background: var(--orange-tint);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-bar .fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--orange);
+      transition: width 0.5s ease;
+    }
+
+    .progress-bar .fill.green { background: var(--green); }
+    .progress-bar .fill.red { background: var(--red); }
+
+    /* ====== INDICATOR CARDS ====== */
 
     .indicator-list {
       display: grid;
-      gap: 14px;
+      gap: var(--space-md);
     }
 
     .indicator-card {
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-lg);
       background: white;
       overflow: hidden;
+      transition: box-shadow var(--transition);
+    }
+
+    .indicator-card:hover {
+      box-shadow: var(--shadow-sm);
     }
 
     .indicator-head {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 14px 16px;
+      gap: var(--space-md);
+      padding: var(--space-md) var(--space-lg);
       cursor: pointer;
       user-select: none;
       background: linear-gradient(180deg, #FFFDFB 0%, #FFF7EF 100%);
-      transition: background .15s;
+      transition: background var(--transition);
     }
 
     .indicator-head:hover { background: var(--orange-tint); }
 
     .indicator-head .chev {
-      width: 22px;
-      height: 22px;
-      flex: 0 0 22px;
-      border-radius: 6px;
+      width: 24px;
+      height: 24px;
+      flex: 0 0 24px;
+      border-radius: var(--radius-sm);
       background: var(--orange-tint-strong);
       color: var(--orange-darker);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
-      transition: transform .2s;
+      transition: transform var(--transition);
     }
 
     .indicator-card.collapsed .indicator-head .chev {
@@ -351,34 +625,38 @@
 
     .indicator-head .code {
       flex: 0 0 auto;
-      min-width: 48px;
       text-align: center;
       font-weight: 700;
       color: var(--orange-darker);
       background: var(--orange-tint);
       border: 1px solid var(--orange-tint-strong);
-      border-radius: 8px;
-      padding: 6px 8px;
-      font-size: 13px;
+      border-radius: var(--radius-sm);
+      padding: 4px 8px;
+      font-size: var(--fs-sm);
+      min-width: 40px;
     }
 
     .indicator-head .name {
       flex: 1;
       font-weight: 600;
-      font-size: 14px;
+      font-size: var(--fs-md);
       color: var(--ink);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .indicator-head .summary {
       flex: 0 0 auto;
       display: flex;
-      gap: 6px;
+      gap: var(--space-xs);
       flex-wrap: wrap;
       justify-content: flex-end;
     }
 
     .indicator-body {
-      padding: 0 16px 16px;
+      padding: 0 var(--space-lg) var(--space-lg);
       border-top: 1px solid var(--border);
       overflow-x: auto;
       overflow-y: auto;
@@ -390,14 +668,14 @@
     }
 
     .pivot-wrap {
-      padding-top: 14px;
+      padding-top: var(--space-md);
       min-width: 480px;
     }
 
     table.pivot {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: var(--fs-base);
     }
 
     table.pivot th,
@@ -414,6 +692,7 @@
       font-weight: 700;
       position: sticky;
       top: 0;
+      z-index: 1;
     }
 
     table.pivot th.wilayah,
@@ -424,13 +703,18 @@
       white-space: nowrap;
     }
 
-    table.pivot td.wilayah { color: var(--ink); }
+    table.pivot tbody tr:nth-child(even) td {
+      background: #FFFDFB;
+    }
 
-    table.pivot tr:hover td { background: #FFFAF4; }
+    table.pivot tr:hover td {
+      background: #FFFAF4;
+    }
 
     table.pivot td.empty-cell {
-      color: #CBB9A6;
+      color: var(--ink-faint);
       text-align: center;
+      font-size: var(--fs-sm);
     }
 
     table.pivot td.val-success { color: var(--green); font-weight: 600; }
@@ -439,10 +723,10 @@
 
     .legend {
       display: flex;
-      gap: 14px;
-      font-size: 12px;
+      gap: var(--space-lg);
+      font-size: var(--fs-sm);
       color: var(--ink-soft);
-      margin-top: 10px;
+      margin-top: var(--space-md);
       flex-wrap: wrap;
     }
 
@@ -453,11 +737,184 @@
       height: 10px;
       border-radius: 3px;
       margin-right: 5px;
+      vertical-align: middle;
     }
 
     .legend .lg-s::before { background: var(--green-tint); border: 1px solid var(--green); }
     .legend .lg-r::before { background: var(--orange-tint-strong); border: 1px solid var(--orange); }
-    .legend .lg-e::before { background: #F3EDE6; border: 1px dashed #CBB9A6; }
+    .legend .lg-e::before { background: #F3EDE6; border: 1px dashed var(--ink-faint); }
+
+    /* ====== DELETE BUTTON ====== */
+
+    .delete-btn {
+      background: none;
+      border: 0;
+      color: var(--red);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+
+    .delete-btn:hover {
+      background: var(--red-tint);
+    }
+
+    /* ====== MODAL ====== */
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-overlay.hidden {
+      display: none;
+    }
+
+    .modal-box {
+      background: white;
+      border-radius: var(--radius-xl);
+      padding: var(--space-2xl);
+      max-width: 440px;
+      width: 90%;
+      box-shadow: var(--shadow-lg);
+      transform: scale(0.95) translateY(10px);
+      transition: transform 0.25s ease;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-overlay.open .modal-box {
+      transform: scale(1) translateY(0);
+    }
+
+    .modal-box h3 {
+      margin: 0 0 var(--space-md);
+      color: var(--red);
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+
+    .modal-box p {
+      color: var(--ink);
+      font-size: var(--fs-md);
+      line-height: 1.6;
+      margin: 0 0 var(--space-xs);
+    }
+
+    .modal-box .warning {
+      background: var(--red-tint);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      font-size: var(--fs-sm);
+      color: var(--red);
+      margin: var(--space-md) 0 var(--space-xl);
+      line-height: 1.5;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: var(--space-sm);
+      justify-content: flex-end;
+    }
+
+    .modal-actions .danger {
+      background: var(--red);
+      color: white;
+    }
+
+    .modal-actions .danger:hover:not(:disabled) {
+      background: #99201A;
+    }
+
+    /* ====== TOAST ====== */
+
+    #toastContainer {
+      position: fixed;
+      top: var(--space-lg);
+      right: var(--space-lg);
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+      max-width: 380px;
+      width: calc(100% - 32px);
+    }
+
+    .toast {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-sm);
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
+      font-size: var(--fs-base);
+      animation: toastIn 0.3s ease;
+      word-break: break-word;
+    }
+
+    .toast.success { background: var(--green-tint); color: var(--green); border-left: 4px solid var(--green); }
+    .toast.error { background: var(--red-tint); color: var(--red); border-left: 4px solid var(--red); }
+    .toast.info { background: var(--orange-tint); color: var(--orange-darker); border-left: 4px solid var(--orange); }
+
+    .toast .toast-close {
+      background: none;
+      border: 0;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 0;
+      margin-left: auto;
+      flex-shrink: 0;
+      opacity: 0.6;
+      color: inherit;
+    }
+
+    .toast .toast-close:hover { opacity: 1; }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(40px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes toastOut {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(40px); }
+    }
+
+    .toast.out {
+      animation: toastOut 0.25s ease forwards;
+    }
+
+    /* ====== SCROLL CONTAINERS ====== */
+
+    #resultsContainer {
+      max-height: 65vh;
+      overflow-y: auto;
+    }
+
+    #jobsContainer {
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    /* ====== RESPONSIVE ====== */
 
     @media (max-width: 760px) {
       .grid {
@@ -476,962 +933,553 @@
         flex-wrap: wrap;
       }
 
+      .indicator-head .name {
+        white-space: normal;
+      }
+
       .indicator-head .summary {
         width: 100%;
         justify-content: flex-start;
       }
+
+      .job {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .job-actions {
+        justify-content: space-between;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+      }
+
+      .worker-indicator {
+        align-self: center;
+      }
+
+      .toolbar .btn-group {
+        width: 100%;
+      }
+
+      .toolbar .btn-group button {
+        flex: 1;
+      }
     }
 
-    /* ====== Scroll kartu hasil & job list ====== */
-
-    #resultsContainer {
-      max-height: 65vh;
-      overflow-y: auto;
+    @media (max-width: 480px) {
+      body { padding: 0 var(--space-md) 32px; }
+      .topbar { margin: 0 calc(-1 * var(--space-md)) var(--space-lg); padding: var(--space-lg) var(--space-md); }
+      .card { padding: var(--space-lg); }
+      .modal-box { padding: var(--space-xl); }
     }
 
-    #jobsContainer {
-      max-height: 320px;
-      overflow-y: auto;
+    @media print {
+      .topbar, .card:first-child, .toolbar, .delete-btn, .job-actions button { display: none; }
+      .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
+      .indicator-body { max-height: none; overflow: visible; }
     }
 
-    /* ====== Tombol hapus indikator ====== */
-
-    .delete-btn {
-      background: none;
-      border: 0;
-      color: var(--red);
-      font-size: 12px;
-      font-weight: 600;
-      padding: 4px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
-    .delete-btn:hover {
-      background: var(--red-tint);
-    }
-
-    /* ====== Sumber dinamis ====== */
-
-    .source-block {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 12px;
-      background: #FFFDFB;
-      position: relative;
-    }
-
-    .source-remove {
-      position: absolute;
-      top: 8px;
-      right: 12px;
-      background: none;
-      border: 0;
-      color: var(--red);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 6px;
-    }
-
-    .source-remove:hover {
-      background: var(--red-tint);
-    }
-
-    .add-source-btn {
-      margin-top: 8px;
-      margin-bottom: 12px;
-      background: var(--orange-tint);
-      color: var(--orange-darker);
-      border: 1px dashed var(--orange-tint-strong);
-      width: 100%;
-      padding: 12px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      text-align: center;
-    }
-
-    .add-source-btn:hover {
-      background: var(--orange-tint-strong);
-    }
-
-    /* ====== Modal konfirmasi hapus ====== */
-
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-
-    .modal-overlay.hidden {
-      display: none;
-    }
-
-    .modal-box {
-      background: white;
-      border-radius: 14px;
-      padding: 28px;
-      max-width: 440px;
-      width: 90%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-    }
-
-    .modal-box h3 {
-      margin: 0 0 12px;
-      color: var(--red);
-      font-size: 17px;
-    }
-
-    .modal-box p {
-      color: var(--ink);
-      font-size: 14px;
-      line-height: 1.6;
-      margin: 0 0 6px;
-    }
-
-    .modal-box .warning {
-      background: var(--red-tint);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 13px;
-      color: var(--red);
-      margin: 12px 0 20px;
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-    }
-
-    .modal-actions .danger {
-      background: var(--red);
-      color: white;
-    }
-
-    .modal-actions .danger:hover {
-      filter: brightness(1.1);
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 
 <body>
 
+  <!-- ====== TOPBAR ====== -->
   <div class="topbar">
     <div class="topbar-left">
       <h1>Auto Scraping Indikator</h1>
-      <p>Submit indikator → job PENDING → Python worker memproses otomatis.</p>
+      <p>Submit indikator &rarr; job PENDING &rarr; Python worker memproses otomatis.</p>
     </div>
     <div class="worker-indicator" id="workerIndicator">
       <span class="worker-dot" id="workerDot"></span>
-      <span id="workerLabel">Memeriksa...</span>
+      <span id="workerLabel">Memeriksa&hellip;</span>
     </div>
   </div>
 
+  <!-- ====== TOAST CONTAINER ====== -->
+  <div id="toastContainer" role="alert" aria-live="polite"></div>
+
+  <!-- ====== FORM CARD ====== -->
   <div class="card">
-    <h2>Tambah Indikator</h2>
+    <div class="card-header">
+      <div class="icon orange">+</div>
+      <h2>Tambah Indikator</h2>
+    </div>
 
     <div class="grid">
 
       <div>
-        <label>Kode</label>
-        <input id="kode">
+        <label for="kode">Kode</label>
+        <input id="kode" placeholder="Contoh: 3.2">
       </div>
 
       <div>
-        <label>Nama indikator</label>
-        <input id="nama_indikator">
+        <label for="nama_indikator">Nama Indikator</label>
+        <input id="nama_indikator" placeholder="Contoh: Indeks Daya Saing Daerah">
       </div>
 
       <div class="full">
         <label>Rentang Tahun</label>
-
         <div class="year-range">
           <div>
-            <label class="sub-label">Dari</label>
+            <label class="sub-label" for="tahun_dari">Dari</label>
             <select id="tahun_dari"></select>
           </div>
-
           <div>
-            <label class="sub-label">Sampai</label>
+            <label class="sub-label" for="tahun_sampai">Sampai</label>
             <select id="tahun_sampai"></select>
           </div>
         </div>
-
-        <div class="hint">
-          Contoh: Dari 2019 sampai 2025 akan dikirim ke sistem sebagai 2019-2025.
-        </div>
+        <div class="hint">Contoh: 2019-2025 akan dikirim sebagai rentang ke sistem.</div>
       </div>
 
       <div>
-        <label>Cakupan Wilayah</label>
-
-        <select
-          id="wilayah_scope"
-          onchange="handleWilayahScope()"
-        >
-          <option value="PROV">
-            Provinsi Kalimantan Selatan saja
-          </option>
-
-          <option value="KABKOTA">
-            Seluruh Kab/Kota Kalimantan Selatan
-          </option>
-
-          <option value="ALL">
-            Provinsi + seluruh Kab/Kota Kalimantan Selatan
-          </option>
-
-          <option value="SPECIFIC">
-            Satu wilayah tertentu
-          </option>
+        <label for="wilayah_scope">Cakupan Wilayah</label>
+        <select id="wilayah_scope" onchange="handleWilayahScope()">
+          <option value="PROV">Provinsi Kalimantan Selatan saja</option>
+          <option value="KABKOTA">Seluruh Kab/Kota Kalimantan Selatan</option>
+          <option value="ALL">Provinsi + seluruh Kab/Kota</option>
+          <option value="SPECIFIC">Satu wilayah tertentu</option>
         </select>
-
-        <div class="hint">
-          Pilih cakupan. User tidak perlu mengetik nama wilayah sendiri.
-        </div>
       </div>
 
-      <div
-        id="specificWilayahBox"
-        class="hidden"
-      >
-        <label>Wilayah Tertentu</label>
-
+      <div id="specificWilayahBox" class="hidden">
+        <label for="wilayah_specific">Wilayah Tertentu</label>
         <select id="wilayah_specific">
-          <option value="Prov. Kalimantan Selatan">
-            Prov. Kalimantan Selatan
-          </option>
-
-          <option value="Kab. Tanah Laut">
-            Kab. Tanah Laut
-          </option>
-
-          <option value="Kab. Kotabaru">
-            Kab. Kotabaru
-          </option>
-
-          <option value="Kab. Banjar">
-            Kab. Banjar
-          </option>
-
-          <option value="Kab. Barito Kuala">
-            Kab. Barito Kuala
-          </option>
-
-          <option value="Kab. Tapin">
-            Kab. Tapin
-          </option>
-
-          <option value="Kab. Hulu Sungai Selatan">
-            Kab. Hulu Sungai Selatan
-          </option>
-
-          <option value="Kab. Hulu Sungai Tengah">
-            Kab. Hulu Sungai Tengah
-          </option>
-
-          <option value="Kab. Hulu Sungai Utara">
-            Kab. Hulu Sungai Utara
-          </option>
-
-          <option value="Kab. Tabalong">
-            Kab. Tabalong
-          </option>
-
-          <option value="Kab. Tanah Bumbu">
-            Kab. Tanah Bumbu
-          </option>
-
-          <option value="Kab. Balangan">
-            Kab. Balangan
-          </option>
-
-          <option value="Kota Banjarmasin">
-            Kota Banjarmasin
-          </option>
-
-          <option value="Kota Banjarbaru">
-            Kota Banjarbaru
-          </option>
+          <option value="Prov. Kalimantan Selatan">Prov. Kalimantan Selatan</option>
+          <option value="Kab. Tanah Laut">Kab. Tanah Laut</option>
+          <option value="Kab. Kotabaru">Kab. Kotabaru</option>
+          <option value="Kab. Banjar">Kab. Banjar</option>
+          <option value="Kab. Barito Kuala">Kab. Barito Kuala</option>
+          <option value="Kab. Tapin">Kab. Tapin</option>
+          <option value="Kab. Hulu Sungai Selatan">Kab. Hulu Sungai Selatan</option>
+          <option value="Kab. Hulu Sungai Tengah">Kab. Hulu Sungai Tengah</option>
+          <option value="Kab. Hulu Sungai Utara">Kab. Hulu Sungai Utara</option>
+          <option value="Kab. Tabalong">Kab. Tabalong</option>
+          <option value="Kab. Tanah Bumbu">Kab. Tanah Bumbu</option>
+          <option value="Kab. Balangan">Kab. Balangan</option>
+          <option value="Kota Banjarmasin">Kota Banjarmasin</option>
+          <option value="Kota Banjarbaru">Kota Banjarbaru</option>
         </select>
       </div>
 
-
-      <div id="sourceContainer">
+      <div class="full" id="sourceContainer">
         <div class="source-block" data-index="1">
           <div class="full">
-            <label>Sumber 1</label>
-            <input
-              class="source-url"
-              placeholder="https://..."
-            >
+            <label for="sourceUrl1">Sumber 1</label>
+            <input class="source-url" id="sourceUrl1" placeholder="https://&hellip;">
           </div>
-
           <div class="full">
-            <label>Ambil Data 1</label>
-            <textarea class="source-desc"></textarea>
+            <label for="sourceDesc1">Ambil Data 1</label>
+            <textarea class="source-desc" id="sourceDesc1" placeholder="Deskripsi data yang akan diambil"></textarea>
           </div>
         </div>
       </div>
 
       <div class="full">
-        <button
-          class="add-source-btn"
-          id="addSourceBtn"
-          onclick="addSource()"
-        >
+        <button class="add-source-btn" id="addSourceBtn" type="button" onclick="addSource()">
           + Tambah Sumber
         </button>
       </div>
 
       <div>
-        <label>Rumus</label>
+        <label for="rumus">Rumus</label>
         <input id="rumus" value="S1">
       </div>
 
     </div>
 
-    <button
-      class="primary"
-      onclick="submitForm()"
-    >
-      Submit & Queue
+    <button class="primary btn-lg" onclick="submitForm()" id="submitBtn" style="margin-top:18px">
+      Submit
     </button>
 
-    <div id="status"></div>
+    <div id="formStatus"></div>
   </div>
 
-
+  <!-- ====== RESULTS CARD ====== -->
   <div class="card">
-    <h2>Hasil Scraping</h2>
+    <div class="card-header">
+      <div class="icon blue">&#9783;</div>
+      <h2>Hasil Scraping</h2>
+      <span class="badge-count" id="resultCount">0</span>
+    </div>
 
     <div class="toolbar">
-
       <div class="filter">
-        <label>Filter kode / nama indikator</label>
-
+        <label for="filterKode">Filter kode / nama indikator</label>
         <input
           id="filterKode"
           placeholder="Contoh: 3.2 atau Indeks Daya Saing"
-          oninput="applyFilter()"
-          onkeydown="
-            if(event.key === 'Enter') {
-              refreshDashboard()
-            }
-          "
+          oninput="debounceFilter()"
+          onkeydown="if(event.key==='Enter')refreshDashboard()"
         >
       </div>
-
       <div class="btn-group">
-        <button
-          class="secondary"
-          onclick="refreshDashboard()"
-        >
-          Refresh
-        </button>
-
-        <button
-          class="secondary"
-          onclick="expandAll()"
-        >
-          Expand semua
-        </button>
-
-        <button
-          class="secondary"
-          onclick="collapseAll()"
-        >
-          Collapse semua
-        </button>
+        <button class="secondary" onclick="refreshDashboard()">&#8635; Refresh</button>
+        <button class="secondary" onclick="expandAll()">&#9650; Expand</button>
+        <button class="secondary" onclick="collapseAll()">&#9660; Collapse</button>
       </div>
-
     </div>
 
-    <div
-      id="dashboardMeta"
-      class="meta"
-    >
-      Memuat hasil...
-    </div>
-
+    <div id="dashboardMeta" class="meta">Memuat hasil&hellip;</div>
     <div id="resultsContainer"></div>
   </div>
 
-
+  <!-- ====== JOBS CARD ====== -->
   <div class="card">
-    <h2>10 Job Terakhir</h2>
-
-    <div
-      id="jobsContainer"
-      class="job-list"
-    >
-      Memuat job...
+    <div class="card-header">
+      <div class="icon green">&#9881;</div>
+      <h2>10 Job Terakhir</h2>
     </div>
+    <div id="jobsContainer" class="job-list">Memuat job&hellip;</div>
   </div>
 
-
-  <div
-    id="deleteModal"
-    class="modal-overlay hidden"
-  >
+  <!-- ====== DELETE CONFIRM MODAL ====== -->
+  <div id="deleteModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
     <div class="modal-box">
-      <h3>Hapus Indikator</h3>
-
+      <h3 id="deleteModalTitle">&#9888; Hapus Indikator</h3>
       <p>
         Anda akan menghapus
-        <strong id="deleteKode"></strong> —
+        <strong id="deleteKode"></strong> &mdash;
         <span id="deleteNama"></span>.
       </p>
-
       <div class="warning">
         Peringatan: data yang dihapus tidak dapat dipulihkan.
         Anda harus melakukan scraping ulang jika indikator ini dibutuhkan lagi.
       </div>
-
       <div class="modal-actions">
-        <button
-          class="secondary"
-          onclick="closeDeleteModal()"
-        >
-          Batal
-        </button>
-
-        <button
-          class="danger"
-          onclick="doDeleteIndicator()"
-        >
-          Ya, Hapus
-        </button>
+        <button class="secondary" id="cancelDeleteBtn" onclick="closeDeleteModal()">Batal</button>
+        <button class="danger" id="confirmDeleteBtn" onclick="doDeleteIndicator()">Ya, Hapus</button>
       </div>
     </div>
   </div>
 
+  <!-- ====== GENERIC CONFIRM MODAL ====== -->
+  <div id="confirmModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+    <div class="modal-box">
+      <h3 id="confirmModalTitle">Konfirmasi</h3>
+      <p id="confirmModalBody"></p>
+      <div class="modal-actions">
+        <button class="secondary" id="cancelConfirmBtn" onclick="closeConfirmModal()">Batal</button>
+        <button class="danger" id="confirmOkBtn" onclick="confirmOk()">Ya</button>
+      </div>
+    </div>
+  </div>
 
 <script>
-
 const WILAYAH_ORDER = [
   'Prov. Kalimantan Selatan',
-  'Kab. Tanah Laut',
-  'Kab. Kotabaru',
-  'Kab. Banjar',
-  'Kab. Barito Kuala',
-  'Kab. Tapin',
-  'Kab. Hulu Sungai Selatan',
-  'Kab. Hulu Sungai Tengah',
-  'Kab. Hulu Sungai Utara',
-  'Kab. Tabalong',
-  'Kab. Tanah Bumbu',
-  'Kab. Balangan',
-  'Kota Banjarmasin',
-  'Kota Banjarbaru'
+  'Kab. Tanah Laut', 'Kab. Kotabaru', 'Kab. Banjar',
+  'Kab. Barito Kuala', 'Kab. Tapin', 'Kab. Hulu Sungai Selatan',
+  'Kab. Hulu Sungai Tengah', 'Kab. Hulu Sungai Utara',
+  'Kab. Tabalong', 'Kab. Tanah Bumbu', 'Kab. Balangan',
+  'Kota Banjarmasin', 'Kota Banjarbaru'
 ];
 
 const WILAYAH_NORM = {};
-WILAYAH_ORDER.forEach((name, index) => {
+WILAYAH_ORDER.forEach(function(name, index) {
   WILAYAH_NORM[normRegion(name)] = index;
 });
 
+var _confirmCallback = null;
+var LAST_ROWS = [];
+var COLLAPSED_STATE = {};
+var _filterTimer = null;
+
 function value(id) {
-  return document
-    .getElementById(id)
-    .value
-    .trim();
+  return document.getElementById(id).value.trim();
 }
 
+function escapeHtml(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+function escapeAttr(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+function normRegion(v) {
+  return String(v || '').trim().replace(/\s+/g,' ').toLowerCase();
+}
+
+/* ====== TOAST ====== */
+
+function showToast(message, type) {
+  type = type || 'info';
+  var container = document.getElementById('toastContainer');
+  var toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.innerHTML = '<span>' + escapeHtml(message) + '</span><button class="toast-close" onclick="this.parentElement.classList.add(\'out\');setTimeout(function(){this.parentElement.remove()}.bind(this),300)">&times;</button>';
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('out');
+    setTimeout(function() { if (toast.parentElement) toast.remove(); }, 300);
+  }, 4000);
+}
+
+/* ====== CONFIRM MODAL ====== */
+
+function showConfirm(message, callback) {
+  _confirmCallback = callback;
+  document.getElementById('confirmModalBody').textContent = message;
+  document.getElementById('confirmModal').classList.remove('hidden');
+  requestAnimationFrame(function() {
+    document.getElementById('confirmModal').classList.add('open');
+  });
+  document.getElementById('confirmOkBtn').focus();
+}
+
+function closeConfirmModal() {
+  document.getElementById('confirmModal').classList.remove('open');
+  _confirmCallback = null;
+  setTimeout(function() {
+    document.getElementById('confirmModal').classList.add('hidden');
+  }, 250);
+}
+
+function confirmOk() {
+  var cb = _confirmCallback;
+  closeConfirmModal();
+  if (cb) cb();
+}
+
+/* ====== DELETE MODAL ====== */
+
+var deleteTarget = null;
+
+function confirmDeleteIndicator(kode, nama) {
+  deleteTarget = { kode: String(kode || '').trim(), nama: String(nama || '').trim() };
+  document.getElementById('deleteKode').textContent = deleteTarget.kode || '-';
+  document.getElementById('deleteNama').textContent = deleteTarget.nama || '';
+  document.getElementById('deleteModal').classList.remove('hidden');
+  requestAnimationFrame(function() {
+    document.getElementById('deleteModal').classList.add('open');
+    document.getElementById('cancelDeleteBtn').focus();
+  });
+}
+
+function closeDeleteModal() {
+  deleteTarget = null;
+  document.getElementById('deleteModal').classList.remove('open');
+  setTimeout(function() {
+    document.getElementById('deleteModal').classList.add('hidden');
+  }, 250);
+}
+
+function doDeleteIndicator() {
+  if (!deleteTarget) { closeDeleteModal(); return; }
+  var kode = deleteTarget.kode;
+  document.getElementById('deleteKode').textContent = 'Menghapus...';
+  document.getElementById('confirmDeleteBtn').disabled = true;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      closeDeleteModal();
+      document.getElementById('confirmDeleteBtn').disabled = false;
+      if (!result.success) {
+        showToast(result.error || 'Gagal menghapus indikator.', 'error');
+        return;
+      }
+      showToast('Indikator ' + kode + ' berhasil dihapus.', 'success');
+      refreshDashboard();
+    })
+    .withFailureHandler(function(error) {
+      closeDeleteModal();
+      document.getElementById('confirmDeleteBtn').disabled = false;
+      showToast('Gagal menghapus: ' + error.message, 'error');
+    })
+    .deleteIndicator(kode);
+}
+
+/* ====== FORM ====== */
 
 function setupYearOptions() {
-  const currentYear = new Date().getFullYear();
-
-  const startSelect = document.getElementById('tahun_dari');
-  const endSelect = document.getElementById('tahun_sampai');
-
-  // Rentang cukup lebar untuk data historis sampai beberapa tahun ke depan.
-  const minYear = 2000;
-  const maxYear = currentYear + 2;
-
-  for (let year = minYear; year <= maxYear; year++) {
-    const optionStart = document.createElement('option');
-    optionStart.value = year;
-    optionStart.textContent = year;
-    startSelect.appendChild(optionStart);
-
-    const optionEnd = document.createElement('option');
-    optionEnd.value = year;
-    optionEnd.textContent = year;
-    endSelect.appendChild(optionEnd);
+  var currentYear = new Date().getFullYear();
+  var startSelect = document.getElementById('tahun_dari');
+  var endSelect = document.getElementById('tahun_sampai');
+  var minYear = 2000, maxYear = currentYear + 2;
+  for (var y = minYear; y <= maxYear; y++) {
+    var o1 = document.createElement('option'); o1.value = y; o1.textContent = y; startSelect.appendChild(o1);
+    var o2 = document.createElement('option'); o2.value = y; o2.textContent = y; endSelect.appendChild(o2);
   }
-
-  // Default mengikuti kebutuhan proyek saat ini.
   startSelect.value = '2019';
-  endSelect.value = String(
-    Math.min(2025, maxYear)
-  );
+  endSelect.value = String(Math.min(2025, maxYear));
 }
-
 
 function buildTahunRange() {
-  const start = Number(
-    document.getElementById('tahun_dari').value
-  );
-
-  const end = Number(
-    document.getElementById('tahun_sampai').value
-  );
-
-  if (!start || !end) {
-    throw new Error('Tahun Dari dan Sampai wajib dipilih.');
-  }
-
-  if (start > end) {
-    throw new Error(
-      'Tahun Dari tidak boleh lebih besar dari Tahun Sampai.'
-    );
-  }
-
-  if (start === end) {
-    return String(start);
-  }
-
-  return `${start}-${end}`;
+  var start = Number(document.getElementById('tahun_dari').value);
+  var end = Number(document.getElementById('tahun_sampai').value);
+  if (!start || !end) throw new Error('Tahun Dari dan Sampai wajib dipilih.');
+  if (start > end) throw new Error('Tahun Dari tidak boleh lebih besar dari Tahun Sampai.');
+  return start === end ? String(start) : start + '-' + end;
 }
-
 
 function handleWilayahScope() {
-  const scope = value(
-    'wilayah_scope'
-  );
-
-  const box = document
-    .getElementById(
-      'specificWilayahBox'
-    );
-
-  if (scope === 'SPECIFIC') {
-    box.classList.remove(
-      'hidden'
-    );
+  var box = document.getElementById('specificWilayahBox');
+  if (value('wilayah_scope') === 'SPECIFIC') {
+    box.classList.remove('hidden');
   } else {
-    box.classList.add(
-      'hidden'
-    );
+    box.classList.add('hidden');
   }
 }
 
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+function setLoading(btn, loading) {
+  if (loading) {
+    btn._orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Memproses...';
+  } else {
+    btn.disabled = false;
+    if (btn._orig) btn.innerHTML = btn._orig;
+  }
 }
 
-
-function normRegion(value) {
-  return String(value || '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
+function setFormStatus(msg, type) {
+  var el = document.getElementById('formStatus');
+  if (!msg) { el.innerHTML = ''; return; }
+  el.innerHTML = '<span class="msg ' + (type || 'info') + '">' + escapeHtml(msg) + '</span>';
 }
 
-
-function escapeAttr(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-
-const MAX_SOURCES = 3;
-
-
-function addSource() {
-  const container = document.getElementById('sourceContainer');
-  const blocks = container.querySelectorAll('.source-block');
-  const current = blocks.length;
-
-  if (current >= MAX_SOURCES) {
+function submitForm() {
+  var tahunRange;
+  try {
+    tahunRange = buildTahunRange();
+  } catch (error) {
+    setFormStatus(error.message, 'error');
     return;
   }
 
-  const next = current + 1;
+  var data = {
+    kode: value('kode'),
+    nama_indikator: value('nama_indikator'),
+    tahun: tahunRange,
+    wilayah_scope: value('wilayah_scope'),
+    wilayah_specific: value('wilayah_specific'),
+    rumus: value('rumus')
+  };
 
-  const block = document.createElement('div');
+  document.querySelectorAll('#sourceContainer .source-block').forEach(function(block, index) {
+    var slot = index + 1;
+    data['sumber_' + slot] = block.querySelector('.source-url').value.trim();
+    data['data_diambil_' + slot] = block.querySelector('.source-desc').value.trim();
+  });
+
+  var btn = document.getElementById('submitBtn');
+  setLoading(btn, true);
+  setFormStatus('Membuat job...', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      setLoading(btn, false);
+      setFormStatus('Job ID: ' + result.job_id + ' | Status: ' + result.status, 'success');
+      showToast('Job ' + result.job_id + ' berhasil dibuat.', 'success');
+      setTimeout(refreshDashboard, 1500);
+    })
+    .withFailureHandler(function(error) {
+      setLoading(btn, false);
+      setFormStatus('ERROR: ' + error.message, 'error');
+      showToast('Gagal membuat job: ' + error.message, 'error');
+    })
+    .submitIndicator(data);
+}
+
+/* ====== SOURCE BLOCKS ====== */
+
+var MAX_SOURCES = 3;
+
+function addSource() {
+  var container = document.getElementById('sourceContainer');
+  var blocks = container.querySelectorAll('.source-block');
+  var current = blocks.length;
+  if (current >= MAX_SOURCES) return;
+  var next = current + 1;
+  var block = document.createElement('div');
   block.className = 'source-block';
   block.dataset.index = String(next);
-
-  block.innerHTML = `
-    <button
-      class="source-remove"
-      type="button"
-      onclick="removeSource(this)"
-    >
-      ✕ Hapus sumber
-    </button>
-
-    <div class="full">
-      <label>Sumber ${next}</label>
-      <input
-        class="source-url"
-        placeholder="https://..."
-      >
-    </div>
-
-    <div class="full">
-      <label>Ambil Data ${next}</label>
-      <textarea class="source-desc"></textarea>
-    </div>
-  `;
-
+  block.innerHTML =
+    '<button class="source-remove" type="button" onclick="removeSource(this)">&times; Hapus sumber</button>'
+    + '<div class="full"><label for="sourceUrl' + next + '">Sumber ' + next + '</label>'
+    + '<input class="source-url" id="sourceUrl' + next + '" placeholder="https://&hellip;"></div>'
+    + '<div class="full"><label for="sourceDesc' + next + '">Ambil Data ' + next + '</label>'
+    + '<textarea class="source-desc" id="sourceDesc' + next + '" placeholder="Deskripsi data"></textarea></div>';
   container.appendChild(block);
-
   updateAddSourceButton();
 }
 
-
 function removeSource(button) {
-  const container = document.getElementById('sourceContainer');
-  const blocks = container.querySelectorAll('.source-block');
-
-  // Sumber pertama tidak boleh dihapus.
-  if (blocks.length <= 1) {
-    return;
-  }
-
+  var container = document.getElementById('sourceContainer');
+  if (container.querySelectorAll('.source-block').length <= 1) return;
   button.closest('.source-block').remove();
   renumberSources();
   updateAddSourceButton();
 }
 
-
 function renumberSources() {
-  const container = document.getElementById('sourceContainer');
-
-  container
-    .querySelectorAll('.source-block')
-    .forEach((block, index) => {
-      const n = index + 1;
-      block.dataset.index = String(n);
-
-      const labels = block.querySelectorAll('label');
-      const inputs = block.querySelectorAll('input');
-
-      if (labels[0]) {
-        labels[0].textContent = `Sumber ${n}`;
-      }
-
-      if (labels[1]) {
-        labels[1].textContent = `Ambil Data ${n}`;
-      }
-
-      inputs.forEach(input => input.setAttribute('placeholder', 'https://...'));
-    });
+  var container = document.getElementById('sourceContainer');
+  container.querySelectorAll('.source-block').forEach(function(block, index) {
+    var n = index + 1;
+    block.dataset.index = String(n);
+    var labels = block.querySelectorAll('label');
+    if (labels[0]) { labels[0].textContent = 'Sumber ' + n; labels[0].setAttribute('for', 'sourceUrl' + n); }
+    if (labels[1]) { labels[1].textContent = 'Ambil Data ' + n; labels[1].setAttribute('for', 'sourceDesc' + n); }
+    var inputs = block.querySelectorAll('input.source-url');
+    if (inputs[0]) inputs[0].id = 'sourceUrl' + n;
+    var textareas = block.querySelectorAll('textarea.source-desc');
+    if (textareas[0]) textareas[0].id = 'sourceDesc' + n;
+  });
 }
-
 
 function updateAddSourceButton() {
-  const container = document.getElementById('sourceContainer');
-  const count = container.querySelectorAll('.source-block').length;
-  const button = document.getElementById('addSourceBtn');
-
-  if (!button) {
-    return;
-  }
-
-  button.style.display =
-    count >= MAX_SOURCES
-      ? 'none'
-      : 'inline-block';
+  var count = document.getElementById('sourceContainer').querySelectorAll('.source-block').length;
+  var btn = document.getElementById('addSourceBtn');
+  if (btn) btn.style.display = count >= MAX_SOURCES ? 'none' : 'inline-block';
 }
 
-
-let deleteTarget = null;
-
-
-function confirmDeleteIndicator(kode, nama) {
-  deleteTarget = {
-    kode: String(kode || '').trim(),
-    nama: String(nama || '').trim()
-  };
-
-  document
-    .getElementById('deleteKode')
-    .textContent = deleteTarget.kode || '-';
-
-  document
-    .getElementById('deleteNama')
-    .textContent = deleteTarget.nama || '';
-
-  document
-    .getElementById('deleteModal')
-    .classList.remove('hidden');
-}
-
-
-function closeDeleteModal() {
-  deleteTarget = null;
-
-  document
-    .getElementById('deleteModal')
-    .classList.add('hidden');
-}
-
-
-function doDeleteIndicator() {
-  if (!deleteTarget) {
-    closeDeleteModal();
-    return;
-  }
-
-  const kode = deleteTarget.kode;
-
-  document
-    .getElementById('deleteKode')
-    .textContent = 'Menghapus...';
-
-  google.script.run
-    .withSuccessHandler(result => {
-      closeDeleteModal();
-
-      if (!result.success) {
-        alert(result.error || 'Gagal menghapus indikator.');
-        return;
-      }
-
-      alert(
-        `Indikator ${kode} dihapus.\n`
-        + `Master: ${result.deleted_master}\n`
-        + `Hasil: ${result.deleted_result}\n`
-        + `Jobs: ${result.deleted_jobs}`
-      );
-
-      refreshDashboard();
-    })
-    .withFailureHandler(error => {
-      closeDeleteModal();
-      alert(`Gagal menghapus indikator: ${error.message}`);
-    })
-    .deleteIndicator(kode);
-}
-
-
-function statusBadgeClass(status) {
-  const normalized = String(status || '').trim().toUpperCase();
-
-  if (normalized === 'SUCCESS') {
-    return 'badge badge-success';
-  }
-
-  if (normalized === 'FAILED') {
-    return 'badge badge-failed';
-  }
-
-  if (
-    normalized === 'PENDING'
-    || normalized === 'PROCESSING'
-    || normalized === 'CANCEL_REQUESTED'
-    || normalized === 'REVIEW'
-  ) {
-    return 'badge badge-pending';
-  }
-
-  if (
-    normalized === 'LINK_TIDAK_LENGKAP'
-    || normalized === 'NEED_PARSER'
-  ) {
-    return 'badge badge-warning';
-  }
-
-  if (normalized === 'SUMBER_PERLU_LOGIN') {
-    return 'badge badge-login';
-  }
-
-  if (normalized === 'DATA_TIDAK_ADA') {
-    return 'badge badge-ink';
-  }
-
-  return 'badge';
-}
-
-
-function submitForm() {
-  let tahunRange = '';
-
-  try {
-    tahunRange = buildTahunRange();
-  } catch (error) {
-    document
-      .getElementById('status')
-      .textContent =
-        `ERROR: ${error.message}`;
-
-    return;
-  }
-
-  const data = {
-    kode: value('kode'),
-    nama_indikator: value('nama_indikator'),
-    tahun: tahunRange,
-
-    wilayah_scope:
-      value('wilayah_scope'),
-
-    wilayah_specific:
-      value('wilayah_specific'),
-
-    rumus:
-      value('rumus')
-  };
-
-  // Kumpulkan sumber dari blok dinamis (maks 3).
-  document
-    .querySelectorAll('#sourceContainer .source-block')
-    .forEach((block, index) => {
-      const slot = index + 1;
-
-      data[`sumber_${slot}`] = (
-        block.querySelector('.source-url').value
-      ).trim();
-
-      data[`data_diambil_${slot}`] = (
-        block.querySelector('.source-desc').value
-      ).trim();
-    });
-
-  document
-    .getElementById('status')
-    .textContent =
-      'Membuat job...';
-
-  google.script.run
-
-    .withSuccessHandler(
-      result => {
-
-        document
-          .getElementById(
-            'status'
-          )
-          .textContent =
-            `Job dibuat.\n`
-            + `Job ID: ${result.job_id}\n`
-            + `Status: ${result.status}`;
-
-        setTimeout(
-          refreshDashboard,
-          1500
-        );
-      }
-    )
-
-    .withFailureHandler(
-      error => {
-
-        document
-          .getElementById(
-            'status'
-          )
-          .textContent =
-            `ERROR: ${error.message}`;
-      }
-    )
-
-    .submitIndicator(
-      data
-    );
-}
-
+/* ====== DASHBOARD ====== */
 
 function refreshDashboard() {
-  document
-    .getElementById(
-      'dashboardMeta'
-    )
-    .textContent =
-      'Memuat hasil...';
-
+  document.getElementById('dashboardMeta').textContent = 'Memuat hasil...';
   google.script.run
-
-    .withSuccessHandler(
-      renderDashboard
-    )
-
-    .withFailureHandler(
-      error => {
-
-        document
-          .getElementById(
-            'dashboardMeta'
-          )
-          .textContent =
-            `Gagal memuat dashboard: ${error.message}`;
-
-        updateWorkerStatus(null);
-      }
-    )
-
-    .getDashboardData(
-      ''
-    );
+    .withSuccessHandler(renderDashboard)
+    .withFailureHandler(function(error) {
+      document.getElementById('dashboardMeta').textContent = 'Gagal memuat dashboard: ' + error.message;
+      updateWorkerStatus(null);
+    })
+    .getDashboardData('');
 }
 
-
-let LAST_ROWS = [];
-const COLLAPSED_STATE = {};
-
-
 function renderDashboard(data) {
-  const rows = data.results || [];
-
+  var rows = data.results || [];
   LAST_ROWS = rows;
-
   updateMeta(rows, data.last_refresh);
-
   renderIndicators(rows);
-
-  renderJobs(
-    data.jobs || []
-  );
-
+  renderJobs(data.jobs || []);
   updateWorkerStatus(data.worker_alive);
 }
 
-
 function updateMeta(rows, lastRefresh) {
-  const totalIndikator = new Set(
-    rows.map(row => String(row.Kode || '').trim())
-  ).size;
-
-  const successCount = rows.filter(
-    row => String(row.Status || '').toUpperCase() === 'SUCCESS'
-  ).length;
-
-  document
-    .getElementById(
-      'dashboardMeta'
-    )
-    .innerHTML =
-      `<strong>${totalIndikator}</strong> indikator`
-      + ` • <strong>${rows.length}</strong> baris hasil`
-      + ` • <strong>${successCount}</strong> SUCCESS`
-      + ` • Refresh ${lastRefresh || ''}`;
+  var totalIndikator = new Set(rows.map(function(r) { return String(r.Kode || '').trim(); })).size;
+  var successCount = rows.filter(function(r) { return String(r.Status || '').toUpperCase() === 'SUCCESS'; }).length;
+  document.getElementById('dashboardMeta').innerHTML =
+    '<strong>' + totalIndikator + '</strong> indikator'
+    + ' &bull; <strong>' + rows.length + '</strong> baris hasil'
+    + ' &bull; <strong>' + successCount + '</strong> SUCCESS'
+    + ' &bull; Refresh ' + (lastRefresh || '');
+  document.getElementById('resultCount').textContent = totalIndikator;
 }
 
 function updateWorkerStatus(alive) {
-  const dot = document.getElementById('workerDot');
-  const label = document.getElementById('workerLabel');
-
+  var dot = document.getElementById('workerDot');
+  var label = document.getElementById('workerLabel');
   if (alive === true) {
     dot.className = 'worker-dot alive';
     label.textContent = 'Worker Aktif';
@@ -1445,475 +1493,271 @@ function updateWorkerStatus(alive) {
   }
 }
 
+/* ====== INDICATOR RENDERING ====== */
 
 function renderIndicators(rows) {
-  const container =
-    document.getElementById(
-      'resultsContainer'
-    );
-
+  var container = document.getElementById('resultsContainer');
   if (!rows.length) {
-    container.innerHTML =
-      '<div class="empty">'
-      + 'Belum ada hasil yang sesuai.'
-      + '</div>';
-
+    container.innerHTML = '<div class="empty">Belum ada hasil yang sesuai.</div>';
     return;
   }
 
-  // Kelompokkan per (Kode + Nama_Indikator).
-  const groups = {};
-  const order = [];
-
-  rows.forEach(row => {
-    const kode = String(row.Kode || '').trim();
-    const nama = String(row.Nama_Indikator || '').trim();
-    const key = `${kode}|||${nama}`;
-
+  var groups = {}, order = [];
+  rows.forEach(function(row) {
+    var kode = String(row.Kode || '').trim();
+    var nama = String(row.Nama_Indikator || '').trim();
+    var key = kode + '|||' + nama;
     if (!groups[key]) {
-      groups[key] = {
-        kode: kode,
-        nama: nama,
-        rows: []
-      };
-
+      groups[key] = { kode: kode, nama: nama, rows: [] };
       order.push(key);
     }
-
     groups[key].rows.push(row);
   });
 
-  // Urutkan kelompok berdasarkan kode (numeric-aware).
-  order.sort((a, b) => {
-    const codeA = groups[a].kode;
-    const codeB = groups[b].kode;
-
-    return codeA.localeCompare(
-      codeB,
-      'id',
-      {numeric: true, sensitivity: 'base'}
-    );
+  order.sort(function(a, b) {
+    return groups[a].kode.localeCompare(groups[b].kode, 'id', {numeric: true, sensitivity: 'base'});
   });
 
-  const filter = value('filterKode')
-    .toLowerCase();
-
-  const filtered = order.filter(key => {
-    if (!filter) {
-      return true;
-    }
-
-    const group = groups[key];
-
-    return (
-      group.kode.toLowerCase().includes(filter)
-      || group.nama.toLowerCase().includes(filter)
-    );
+  var filter = value('filterKode').toLowerCase();
+  var filtered = order.filter(function(key) {
+    if (!filter) return true;
+    var g = groups[key];
+    return g.kode.toLowerCase().includes(filter) || g.nama.toLowerCase().includes(filter);
   });
 
   if (!filtered.length) {
-    container.innerHTML =
-      '<div class="empty">'
-      + 'Tidak ada indikator yang cocok dengan filter.'
-      + '</div>';
-
+    container.innerHTML = '<div class="empty">Tidak ada indikator yang cocok dengan filter.</div>';
     return;
   }
 
-  container.innerHTML =
-    `<div class="indicator-list">`
-    + filtered.map(key => {
-        const group = groups[key];
-        return indicatorCardHtml(group);
-      }).join('')
-    + `</div>`;
+  container.innerHTML = '<div class="indicator-list">' + filtered.map(function(key) {
+    return indicatorCardHtml(groups[key]);
+  }).join('') + '</div>';
 
-  // Pulihkan preferensi collapse user setelah render ulang.
-  // Kartu yang belum pernah disentuh tetap collapse (default).
-  container
-    .querySelectorAll('.indicator-card')
-    .forEach(card => {
-      if (COLLAPSED_STATE[card.id] === true) {
-        card.classList.add('collapsed');
-      } else if (COLLAPSED_STATE[card.id] === false) {
-        card.classList.remove('collapsed');
-      }
-    });
+  container.querySelectorAll('.indicator-card').forEach(function(card) {
+    if (COLLAPSED_STATE[card.id] === true) {
+      card.classList.add('collapsed');
+    } else if (COLLAPSED_STATE[card.id] === false) {
+      card.classList.remove('collapsed');
+    }
+  });
 }
 
-
 function indicatorCardHtml(group) {
-  const rows = group.rows;
-
-  // Tahun & wilayah unik.
-  const years = [];
-  const yearSet = {};
-
-  rows.forEach(row => {
-    const tahun = String(row.Tahun || '').trim();
-
-    if (tahun && !yearSet[tahun]) {
-      yearSet[tahun] = true;
-      years.push(tahun);
-    }
+  var rows = group.rows;
+  var years = [], yearSet = {};
+  rows.forEach(function(row) {
+    var t = String(row.Tahun || '').trim();
+    if (t && !yearSet[t]) { yearSet[t] = true; years.push(t); }
   });
+  years.sort(function(a,b) { return Number(a) - Number(b); });
 
-  years.sort((a, b) => Number(a) - Number(b));
-
-  const wilayahs = [];
-  const wilayahSet = {};
-
-  rows.forEach(row => {
-    const norm = normRegion(row.Wilayah);
-    const raw = String(row.Wilayah || '').trim();
-
-    if (raw && !wilayahSet[norm]) {
-      wilayahSet[norm] = true;
-      wilayahs.push(raw);
-    }
+  var wilayahs = [], wilayahSet = {};
+  rows.forEach(function(row) {
+    var norm = normRegion(row.Wilayah);
+    var raw = String(row.Wilayah || '').trim();
+    if (raw && !wilayahSet[norm]) { wilayahSet[norm] = true; wilayahs.push(raw); }
   });
-
-  // Urutkan wilayah mengikuti urutan Kalsel, sisanya alfabetis.
-  wilayahs.sort((a, b) => {
-    const na = WILAYAH_NORM[normRegion(a)];
-    const nb = WILAYAH_NORM[normRegion(b)];
-
-    const oa = na === undefined ? 9999 : na;
-    const ob = nb === undefined ? 9999 : nb;
-
-    if (oa !== ob) {
-      return oa - ob;
-    }
-
-    if (oa === 9999) {
-      return normRegion(a).localeCompare(
-        normRegion(b),
-        'id',
-        {sensitivity: 'base'}
-      );
-    }
-
+  wilayahs.sort(function(a,b) {
+    var na = WILAYAH_NORM[normRegion(a)], nb = WILAYAH_NORM[normRegion(b)];
+    var oa = na === undefined ? 9999 : na, ob = nb === undefined ? 9999 : nb;
+    if (oa !== ob) return oa - ob;
+    if (oa === 9999) return normRegion(a).localeCompare(normRegion(b), 'id', {sensitivity: 'base'});
     return 0;
   });
 
-  // Index sel: kode|wilayah-normal|tahun.
-  const cellMap = {};
-  const cellStatus = {};
-
-  rows.forEach(row => {
-    const key = (
-      `${normRegion(row.Wilayah)}|||${String(row.Tahun || '').trim()}`
-    );
-
+  var cellMap = {}, cellStatus = {};
+  rows.forEach(function(row) {
+    var key = normRegion(row.Wilayah) + '|||' + String(row.Tahun || '').trim();
     cellMap[key] = row;
     cellStatus[key] = String(row.Status || '').toUpperCase();
   });
 
-  let filled = 0;
-  const total = wilayahs.length * years.length;
-
-  const thead =
-    '<th class="wilayah">Wilayah</th>'
-    + years.map(year => `<th>${escapeHtml(year)}</th>`).join('');
-
-  const tbody = wilayahs.map(wilayah => {
-    const cells = years.map(year => {
-      const key = `${normRegion(wilayah)}|||${year}`;
-      const row = cellMap[key];
-
-      if (!row) {
-        return '<td class="empty-cell">—</td>';
-      }
-
+  var filled = 0, total = wilayahs.length * years.length;
+  var thead = '<th class="wilayah">Wilayah</th>' + years.map(function(y) { return '<th>' + escapeHtml(y) + '</th>'; }).join('');
+  var tbody = wilayahs.map(function(wilayah) {
+    var cells = years.map(function(year) {
+      var key = normRegion(wilayah) + '|||' + year;
+      var row = cellMap[key];
+      if (!row) return '<td class="empty-cell">&mdash;</td>';
       filled++;
-
-      const status = cellStatus[key];
-      let cls = '';
-
-      if (status === 'SUCCESS') {
-        cls = 'val-success';
-      } else if (status === 'REVIEW') {
-        cls = 'val-review';
-      } else {
-        cls = 'val-failed';
-      }
-
-      return `<td class="${cls}">${escapeHtml(row.Hasil)}</td>`;
+      var status = cellStatus[key];
+      var cls = status === 'SUCCESS' ? 'val-success' : (status === 'REVIEW' ? 'val-review' : 'val-failed');
+      return '<td class="' + cls + '">' + escapeHtml(row.Hasil) + '</td>';
     });
-
-    return (
-      `<tr>`
-      + `<td class="wilayah">${escapeHtml(wilayah)}</td>`
-      + cells.join('')
-      + `</tr>`
-    );
+    return '<tr><td class="wilayah">' + escapeHtml(wilayah) + '</td>' + cells.join('') + '</tr>';
   }).join('');
 
-  const uid = (
-    'g' + Math.abs(
-      hashString(group.kode + group.nama)
-    ).toString(36)
-  );
+  var uid = 'g' + Math.abs(hashString(group.kode + group.nama)).toString(36);
+  var hasReview = rows.some(function(r) { return String(r.Status || '').toUpperCase() === 'REVIEW'; });
+  var summaryStatus = hasReview
+    ? '<span class="badge badge-pending">REVIEW</span>'
+    : '<span class="badge badge-success">SUCCESS</span>';
 
-  const summaryStatus =
-    rows.some(row => String(row.Status || '').toUpperCase() === 'REVIEW')
-      ? '<span class="badge badge-pending">REVIEW</span>'
-      : '<span class="badge badge-success">SUCCESS</span>';
-
-  return `
-    <div
-      class="indicator-card collapsed"
-      id="${uid}"
-    >
-      <div
-        class="indicator-head"
-        onclick="toggleCard('${uid}')"
-      >
-        <span class="chev">▼</span>
-
-        <span class="code">
-          ${escapeHtml(group.kode)}
-        </span>
-
-        <span class="name">
-          ${escapeHtml(group.nama)}
-        </span>
-
-        <span class="summary">
-          <span class="badge">
-            ${filled}/${total} sel terisi
-          </span>
-
-          ${summaryStatus}
-        </span>
-
-        <button
-          class="delete-btn"
-          onclick="event.stopPropagation(); confirmDeleteIndicator('${escapeAttr(group.kode)}', '${escapeAttr(group.nama)}')"
-        >
-          Hapus
-        </button>
-      </div>
-
-      <div class="indicator-body">
-        <div class="pivot-wrap">
-          <table class="pivot">
-            <thead>
-              <tr>${thead}</tr>
-            </thead>
-
-            <tbody>
-              ${tbody}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="legend">
-          <span class="lg-s">SUCCESS</span>
-          <span class="lg-r">REVIEW</span>
-          <span class="lg-e">Kosong / belum terisi</span>
-        </div>
-      </div>
-    </div>
-  `;
+  return '<div class="indicator-card collapsed" id="' + uid + '">'
+    + '<div class="indicator-head" onclick="toggleCard(\'' + uid + '\')">'
+    + '<span class="chev">&#9660;</span>'
+    + '<span class="code">' + escapeHtml(group.kode) + '</span>'
+    + '<span class="name" title="' + escapeAttr(group.nama) + '">' + escapeHtml(group.nama) + '</span>'
+    + '<span class="summary">'
+    + '<span class="badge">' + filled + '/' + total + '</span>'
+    + summaryStatus + '</span>'
+    + '<button class="delete-btn" onclick="event.stopPropagation(); confirmDeleteIndicator(\'' + escapeAttr(group.kode) + '\',\'' + escapeAttr(group.nama) + '\')">Hapus</button>'
+    + '</div>'
+    + '<div class="indicator-body"><div class="pivot-wrap"><table class="pivot"><thead><tr>' + thead + '</tr></thead><tbody>' + tbody + '</tbody></table></div>'
+    + '<div class="legend"><span class="lg-s">SUCCESS</span><span class="lg-r">REVIEW</span><span class="lg-e">Kosong</span></div>'
+    + '</div></div>';
 }
 
-
 function hashString(text) {
-  let hash = 0;
-
-  for (let i = 0; i < text.length; i++) {
+  var hash = 0;
+  for (var i = 0; i < text.length; i++) {
     hash = ((hash << 5) - hash) + text.charCodeAt(i);
     hash |= 0;
   }
-
   return hash;
 }
 
-
 function toggleCard(uid) {
-  const card = document.getElementById(uid);
-
-  if (!card) {
-    return;
-  }
-
+  var card = document.getElementById(uid);
+  if (!card) return;
   card.classList.toggle('collapsed');
-
-  // Simpan preferensi user agar bertahan setelah refresh otomatis.
   COLLAPSED_STATE[uid] = card.classList.contains('collapsed');
 }
 
-
 function expandAll() {
-  document
-    .querySelectorAll('.indicator-card')
-    .forEach(card => {
-      card.classList.remove('collapsed');
-      COLLAPSED_STATE[card.id] = false;
-    });
+  document.querySelectorAll('.indicator-card').forEach(function(card) {
+    card.classList.remove('collapsed');
+    COLLAPSED_STATE[card.id] = false;
+  });
 }
-
 
 function collapseAll() {
-  document
-    .querySelectorAll('.indicator-card')
-    .forEach(card => {
-      card.classList.add('collapsed');
-      COLLAPSED_STATE[card.id] = true;
-    });
+  document.querySelectorAll('.indicator-card').forEach(function(card) {
+    card.classList.add('collapsed');
+    COLLAPSED_STATE[card.id] = true;
+  });
 }
 
-
 function applyFilter() {
-  // Filter dilakukan client-side agar responsif tanpa panggilan server.
-  // renderIndicators() membaca nilai filter dari input secara langsung.
-  const filter = value('filterKode')
-    .toLowerCase()
-    .trim();
-
   renderIndicators(LAST_ROWS);
-
-  const filtered = LAST_ROWS.filter(row =>
-    !filter
-    || String(row.Kode || '').toLowerCase().includes(filter)
-    || String(row.Nama_Indikator || '').toLowerCase().includes(filter)
-  );
-
+  var filter = value('filterKode').toLowerCase().trim();
+  var filtered = LAST_ROWS.filter(function(row) {
+    return !filter
+      || String(row.Kode || '').toLowerCase().includes(filter)
+      || String(row.Nama_Indikator || '').toLowerCase().includes(filter);
+  });
   updateMeta(filtered, '');
 }
 
+function debounceFilter() {
+  if (_filterTimer) clearTimeout(_filterTimer);
+  _filterTimer = setTimeout(applyFilter, 200);
+}
+
+/* ====== JOBS ====== */
 
 function renderJobs(jobs) {
-
-  const container =
-    document.getElementById(
-      'jobsContainer'
-    );
-
+  var container = document.getElementById('jobsContainer');
   if (!jobs.length) {
-    container.innerHTML =
-      '<div class="empty">'
-      + 'Belum ada job.'
-      + '</div>';
-
+    container.innerHTML = '<div class="empty">Belum ada job.</div>';
     return;
   }
 
-  container.innerHTML =
-    jobs.map(job => {
-      const status = String(
-        job.Status || ''
-      ).toUpperCase();
+  container.innerHTML = jobs.map(function(job) {
+    var status = String(job.Status || '').toUpperCase();
+    var progress = Number(job.Progress || 0);
+    var barClass = status === 'SUCCESS' ? 'green' : (status === 'FAILED' ? 'red' : '');
 
-      let actionHtml = '';
+    var actionHtml = '';
+    if (status === 'PENDING' || status === 'PROCESSING') {
+      actionHtml = '<button class="danger btn-sm" onclick="cancelJob(\'' + escapeHtml(job.Job_ID) + '\')">Batalkan</button>';
+    } else if (status === 'CANCEL_REQUESTED') {
+      actionHtml = '<button class="danger btn-sm" disabled>Membatalkan&hellip;</button>';
+    }
 
-      if (
-        status === 'PENDING'
-        || status === 'PROCESSING'
-      ) {
-        actionHtml = `
-          <button
-            class="danger"
-            onclick="cancelJob('${escapeHtml(job.Job_ID)}')"
-          >
-            Batalkan
-          </button>
-        `;
-      } else if (
-        status === 'CANCEL_REQUESTED'
-      ) {
-        actionHtml = `
-          <button
-            class="danger"
-            disabled
-          >
-            Membatalkan...
-          </button>
-        `;
-      }
-
-      return `
-        <div class="job">
-
-          <div>
-            <strong>
-              ${escapeHtml(job.Kode)}
-            </strong>
-
-            <br>
-
-            ${escapeHtml(job.Job_ID)}
-          </div>
-
-          <div style="
-            display:flex;
-            align-items:center;
-            gap:8px;
-            flex-wrap:wrap;
-            justify-content:flex-end;
-          ">
-            <span class="${statusBadgeClass(job.Status)}">
-              ${escapeHtml(job.Status)}
-            </span>
-
-            <span>
-              ${escapeHtml(job.Progress)}%
-            </span>
-
-            ${actionHtml}
-          </div>
-
-        </div>
-      `;
-    }).join('');
+    return '<div class="job">'
+      + '<div class="job-info">'
+      + '<span class="code">' + escapeHtml(job.Kode) + '</span>'
+      + '<span class="id">' + escapeHtml(job.Job_ID) + '</span>'
+      + '</div>'
+      + '<div class="job-actions">'
+      + '<span class="badge ' + statusBadgeClass(job.Status) + '">' + escapeHtml(job.Status) + '</span>'
+      + '<span class="job-progress"><span class="progress-bar"><span class="fill ' + barClass + '" style="width:' + Math.min(progress, 100) + '%"></span></span>' + progress + '%</span>'
+      + actionHtml
+      + '</div></div>';
+  }).join('');
 }
-
 
 function cancelJob(jobId) {
-  const okay = confirm(
-    'Batalkan job ini?\n\n'
-    + 'Jika job sedang diproses, worker akan menghentikan proses tersebut.'
+  showConfirm(
+    'Batalkan job ini? Jika job sedang diproses, worker akan menghentikan proses tersebut.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (!result.success) {
+            showToast(result.error || 'Job tidak dapat dibatalkan.', 'error');
+          } else {
+            showToast('Job berhasil dibatalkan.', 'success');
+          }
+          refreshDashboard();
+        })
+        .withFailureHandler(function(error) {
+          showToast('Gagal membatalkan job: ' + error.message, 'error');
+        })
+        .cancelJob(jobId);
+    }
   );
-
-  if (!okay) {
-    return;
-  }
-
-  google.script.run
-
-    .withSuccessHandler(result => {
-      if (!result.success) {
-        alert(
-          result.error
-          || 'Job tidak dapat dibatalkan.'
-        );
-      }
-
-      refreshDashboard();
-    })
-
-    .withFailureHandler(error => {
-      alert(
-        `Gagal membatalkan job: ${error.message}`
-      );
-    })
-
-    .cancelJob(jobId);
 }
 
+/* ====== BADGE HELPER ====== */
 
+function statusBadgeClass(status) {
+  var s = String(status || '').trim().toUpperCase();
+  if (s === 'SUCCESS') return 'badge-success';
+  if (s === 'FAILED') return 'badge-failed';
+  if (s === 'PENDING' || s === 'PROCESSING' || s === 'CANCEL_REQUESTED' || s === 'REVIEW') return 'badge-pending';
+  if (s === 'LINK_TIDAK_LENGKAP' || s === 'NEED_PARSER') return 'badge-warning';
+  if (s === 'SUMBER_PERLU_LOGIN') return 'badge-login';
+  if (s === 'DATA_TIDAK_ADA') return 'badge-ink';
+  return '';
+}
+
+/* ====== KEYBOARD ====== */
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var deleteModal = document.getElementById('deleteModal');
+    if (!deleteModal.classList.contains('hidden') && deleteModal.classList.contains('open')) {
+      closeDeleteModal();
+      e.preventDefault();
+    }
+    var confirmModal = document.getElementById('confirmModal');
+    if (!confirmModal.classList.contains('hidden') && confirmModal.classList.contains('open')) {
+      closeConfirmModal();
+      e.preventDefault();
+    }
+  }
+});
+
+document.addEventListener('click', function(e) {
+  var deleteModal = document.getElementById('deleteModal');
+  if (!deleteModal.classList.contains('hidden') && deleteModal.classList.contains('open')) {
+    if (e.target === deleteModal) closeDeleteModal();
+  }
+  var confirmModal = document.getElementById('confirmModal');
+  if (!confirmModal.classList.contains('hidden') && confirmModal.classList.contains('open')) {
+    if (e.target === confirmModal) closeConfirmModal();
+  }
+});
+
+/* ====== INIT ====== */
 
 setupYearOptions();
 handleWilayahScope();
 refreshDashboard();
-
-setInterval(
-  refreshDashboard,
-  10000
-);
+setInterval(refreshDashboard, 10000);
 
 </script>
-
 </body>
 </html>

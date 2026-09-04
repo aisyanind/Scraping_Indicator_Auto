@@ -1,0 +1,1919 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      --orange: #E8720C;
+      --orange-dark: #B8560A;
+      --orange-darker: #8A3F06;
+      --orange-tint: #FFF1E4;
+      --orange-tint-strong: #FFE0C2;
+      --border: #EBDDCC;
+      --ink: #2A2016;
+      --ink-soft: #8A7863;
+      --bg: #FBF7F2;
+      --card: #FFFFFF;
+      --green: #1E7E34;
+      --green-tint: #E7F5EA;
+      --red: #B3261E;
+      --red-tint: #FDECEC;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 16px 48px;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .topbar {
+      margin: 0 -16px 24px;
+      padding: 22px 16px;
+      background: linear-gradient(135deg, var(--orange) 0%, var(--orange-dark) 100%);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .topbar-left h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .topbar-left p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: #FFE7CE;
+    }
+
+    .worker-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .worker-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .worker-dot.alive {
+      background: #4CAF50;
+      box-shadow: 0 0 6px rgba(76, 175, 80, .6);
+    }
+
+    .worker-dot.dead {
+      background: #F44336;
+      box-shadow: 0 0 6px rgba(244, 67, 54, .6);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 10px rgba(138, 63, 6, .05);
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--orange-darker);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card h2::before {
+      content: "";
+      width: 4px;
+      height: 16px;
+      border-radius: 2px;
+      background: var(--orange);
+      display: inline-block;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+      background: white;
+      color: var(--ink);
+      transition: border-color .15s, box-shadow .15s;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--orange);
+      box-shadow: 0 0 0 3px var(--orange-tint);
+    }
+
+    textarea { min-height: 70px; }
+
+    .hint {
+      font-size: 12px;
+      color: var(--ink-soft);
+      margin-top: 6px;
+    }
+
+    .year-range {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .sub-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-soft);
+      margin-bottom: 5px;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: filter .15s, transform .05s;
+    }
+
+    button:active { transform: translateY(1px); }
+
+    .primary {
+      margin-top: 18px;
+      background: var(--orange);
+      color: white;
+    }
+
+    .primary:hover { filter: brightness(1.05); }
+
+    .secondary {
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+      border: 1px solid var(--orange-tint-strong);
+    }
+
+    .secondary:hover { background: var(--orange-tint-strong); }
+
+    .danger {
+      background: var(--red-tint);
+      color: var(--red);
+    }
+
+    .danger:disabled {
+      opacity: .6;
+      cursor: default;
+    }
+
+    #status {
+      margin-top: 16px;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .toolbar .filter {
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .toolbar .btn-group {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .meta {
+      font-size: 13px;
+      color: var(--ink-soft);
+      margin: 8px 0 14px;
+    }
+
+    .meta strong { color: var(--orange-darker); }
+
+    .empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--ink-soft);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+    }
+
+    .badge-success {
+      background: var(--green-tint);
+      color: var(--green);
+    }
+
+    .badge-failed {
+      background: var(--red-tint);
+      color: var(--red);
+    }
+
+    .badge-pending {
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+    }
+
+    .badge-ink {
+      background: #F0EDE8;
+      color: #5A4A36;
+    }
+
+    .badge-login {
+      background: #E3EEF9;
+      color: #1A4A7A;
+    }
+
+    .badge-warning {
+      background: #FFF3CD;
+      color: #856404;
+    }
+
+    .job-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .job {
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      background: white;
+    }
+
+    .hidden { display: none; }
+
+    /* ====== Kartu indikator ====== */
+
+    .indicator-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .indicator-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: white;
+      overflow: hidden;
+    }
+
+    .indicator-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      user-select: none;
+      background: linear-gradient(180deg, #FFFDFB 0%, #FFF7EF 100%);
+      transition: background .15s;
+    }
+
+    .indicator-head:hover { background: var(--orange-tint); }
+
+    .indicator-head .chev {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 22px;
+      border-radius: 6px;
+      background: var(--orange-tint-strong);
+      color: var(--orange-darker);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      transition: transform .2s;
+    }
+
+    .indicator-card.collapsed .indicator-head .chev {
+      transform: rotate(-90deg);
+    }
+
+    .indicator-head .code {
+      flex: 0 0 auto;
+      min-width: 48px;
+      text-align: center;
+      font-weight: 700;
+      color: var(--orange-darker);
+      background: var(--orange-tint);
+      border: 1px solid var(--orange-tint-strong);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 13px;
+    }
+
+    .indicator-head .name {
+      flex: 1;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .indicator-head .summary {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .indicator-body {
+      padding: 0 16px 16px;
+      border-top: 1px solid var(--border);
+      overflow-x: auto;
+      overflow-y: auto;
+      max-height: 420px;
+    }
+
+    .indicator-card.collapsed .indicator-body {
+      display: none;
+    }
+
+    .pivot-wrap {
+      padding-top: 14px;
+      min-width: 480px;
+    }
+
+    table.pivot {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    table.pivot th,
+    table.pivot td {
+      padding: 8px 10px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    table.pivot th {
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+    }
+
+    table.pivot th.wilayah,
+    table.pivot td.wilayah {
+      text-align: left;
+      font-weight: 600;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    table.pivot td.wilayah { color: var(--ink); }
+
+    table.pivot tr:hover td { background: #FFFAF4; }
+
+    table.pivot td.empty-cell {
+      color: #CBB9A6;
+      text-align: center;
+    }
+
+    table.pivot td.val-success { color: var(--green); font-weight: 600; }
+    table.pivot td.val-review { color: var(--orange-darker); font-weight: 600; }
+    table.pivot td.val-failed { color: var(--red); font-weight: 600; }
+
+    .legend {
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      color: var(--ink-soft);
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      margin-right: 5px;
+    }
+
+    .legend .lg-s::before { background: var(--green-tint); border: 1px solid var(--green); }
+    .legend .lg-r::before { background: var(--orange-tint-strong); border: 1px solid var(--orange); }
+    .legend .lg-e::before { background: #F3EDE6; border: 1px dashed #CBB9A6; }
+
+    @media (max-width: 760px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .full {
+        grid-column: auto;
+      }
+
+      .year-range {
+        grid-template-columns: 1fr;
+      }
+
+      .indicator-head {
+        flex-wrap: wrap;
+      }
+
+      .indicator-head .summary {
+        width: 100%;
+        justify-content: flex-start;
+      }
+    }
+
+    /* ====== Scroll kartu hasil & job list ====== */
+
+    #resultsContainer {
+      max-height: 65vh;
+      overflow-y: auto;
+    }
+
+    #jobsContainer {
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    /* ====== Tombol hapus indikator ====== */
+
+    .delete-btn {
+      background: none;
+      border: 0;
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .delete-btn:hover {
+      background: var(--red-tint);
+    }
+
+    /* ====== Sumber dinamis ====== */
+
+    .source-block {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: #FFFDFB;
+      position: relative;
+    }
+
+    .source-remove {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      background: none;
+      border: 0;
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+
+    .source-remove:hover {
+      background: var(--red-tint);
+    }
+
+    .add-source-btn {
+      margin-top: 8px;
+      margin-bottom: 12px;
+      background: var(--orange-tint);
+      color: var(--orange-darker);
+      border: 1px dashed var(--orange-tint-strong);
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .add-source-btn:hover {
+      background: var(--orange-tint-strong);
+    }
+
+    /* ====== Modal konfirmasi hapus ====== */
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.hidden {
+      display: none;
+    }
+
+    .modal-box {
+      background: white;
+      border-radius: 14px;
+      padding: 28px;
+      max-width: 440px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .modal-box h3 {
+      margin: 0 0 12px;
+      color: var(--red);
+      font-size: 17px;
+    }
+
+    .modal-box p {
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 0 0 6px;
+    }
+
+    .modal-box .warning {
+      background: var(--red-tint);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--red);
+      margin: 12px 0 20px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .modal-actions .danger {
+      background: var(--red);
+      color: white;
+    }
+
+    .modal-actions .danger:hover {
+      filter: brightness(1.1);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1>Auto Scraping Indikator</h1>
+      <p>Submit indikator → job PENDING → Python worker memproses otomatis.</p>
+    </div>
+    <div class="worker-indicator" id="workerIndicator">
+      <span class="worker-dot" id="workerDot"></span>
+      <span id="workerLabel">Memeriksa...</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Tambah Indikator</h2>
+
+    <div class="grid">
+
+      <div>
+        <label>Kode</label>
+        <input id="kode">
+      </div>
+
+      <div>
+        <label>Nama indikator</label>
+        <input id="nama_indikator">
+      </div>
+
+      <div class="full">
+        <label>Rentang Tahun</label>
+
+        <div class="year-range">
+          <div>
+            <label class="sub-label">Dari</label>
+            <select id="tahun_dari"></select>
+          </div>
+
+          <div>
+            <label class="sub-label">Sampai</label>
+            <select id="tahun_sampai"></select>
+          </div>
+        </div>
+
+        <div class="hint">
+          Contoh: Dari 2019 sampai 2025 akan dikirim ke sistem sebagai 2019-2025.
+        </div>
+      </div>
+
+      <div>
+        <label>Cakupan Wilayah</label>
+
+        <select
+          id="wilayah_scope"
+          onchange="handleWilayahScope()"
+        >
+          <option value="PROV">
+            Provinsi Kalimantan Selatan saja
+          </option>
+
+          <option value="KABKOTA">
+            Seluruh Kab/Kota Kalimantan Selatan
+          </option>
+
+          <option value="ALL">
+            Provinsi + seluruh Kab/Kota Kalimantan Selatan
+          </option>
+
+          <option value="SPECIFIC">
+            Satu wilayah tertentu
+          </option>
+        </select>
+
+        <div class="hint">
+          Pilih cakupan. User tidak perlu mengetik nama wilayah sendiri.
+        </div>
+      </div>
+
+      <div
+        id="specificWilayahBox"
+        class="hidden"
+      >
+        <label>Wilayah Tertentu</label>
+
+        <select id="wilayah_specific">
+          <option value="Prov. Kalimantan Selatan">
+            Prov. Kalimantan Selatan
+          </option>
+
+          <option value="Kab. Tanah Laut">
+            Kab. Tanah Laut
+          </option>
+
+          <option value="Kab. Kotabaru">
+            Kab. Kotabaru
+          </option>
+
+          <option value="Kab. Banjar">
+            Kab. Banjar
+          </option>
+
+          <option value="Kab. Barito Kuala">
+            Kab. Barito Kuala
+          </option>
+
+          <option value="Kab. Tapin">
+            Kab. Tapin
+          </option>
+
+          <option value="Kab. Hulu Sungai Selatan">
+            Kab. Hulu Sungai Selatan
+          </option>
+
+          <option value="Kab. Hulu Sungai Tengah">
+            Kab. Hulu Sungai Tengah
+          </option>
+
+          <option value="Kab. Hulu Sungai Utara">
+            Kab. Hulu Sungai Utara
+          </option>
+
+          <option value="Kab. Tabalong">
+            Kab. Tabalong
+          </option>
+
+          <option value="Kab. Tanah Bumbu">
+            Kab. Tanah Bumbu
+          </option>
+
+          <option value="Kab. Balangan">
+            Kab. Balangan
+          </option>
+
+          <option value="Kota Banjarmasin">
+            Kota Banjarmasin
+          </option>
+
+          <option value="Kota Banjarbaru">
+            Kota Banjarbaru
+          </option>
+        </select>
+      </div>
+
+
+      <div id="sourceContainer">
+        <div class="source-block" data-index="1">
+          <div class="full">
+            <label>Sumber 1</label>
+            <input
+              class="source-url"
+              placeholder="https://..."
+            >
+          </div>
+
+          <div class="full">
+            <label>Ambil Data 1</label>
+            <textarea class="source-desc"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="full">
+        <button
+          class="add-source-btn"
+          id="addSourceBtn"
+          onclick="addSource()"
+        >
+          + Tambah Sumber
+        </button>
+      </div>
+
+      <div>
+        <label>Rumus</label>
+        <input id="rumus" value="S1">
+      </div>
+
+    </div>
+
+    <button
+      class="primary"
+      onclick="submitForm()"
+    >
+      Submit & Queue
+    </button>
+
+    <div id="status"></div>
+  </div>
+
+
+  <div class="card">
+    <h2>Hasil Scraping</h2>
+
+    <div class="toolbar">
+
+      <div class="filter">
+        <label>Filter kode / nama indikator</label>
+
+        <input
+          id="filterKode"
+          placeholder="Contoh: 3.2 atau Indeks Daya Saing"
+          oninput="applyFilter()"
+          onkeydown="
+            if(event.key === 'Enter') {
+              refreshDashboard()
+            }
+          "
+        >
+      </div>
+
+      <div class="btn-group">
+        <button
+          class="secondary"
+          onclick="refreshDashboard()"
+        >
+          Refresh
+        </button>
+
+        <button
+          class="secondary"
+          onclick="expandAll()"
+        >
+          Expand semua
+        </button>
+
+        <button
+          class="secondary"
+          onclick="collapseAll()"
+        >
+          Collapse semua
+        </button>
+      </div>
+
+    </div>
+
+    <div
+      id="dashboardMeta"
+      class="meta"
+    >
+      Memuat hasil...
+    </div>
+
+    <div id="resultsContainer"></div>
+  </div>
+
+
+  <div class="card">
+    <h2>10 Job Terakhir</h2>
+
+    <div
+      id="jobsContainer"
+      class="job-list"
+    >
+      Memuat job...
+    </div>
+  </div>
+
+
+  <div
+    id="deleteModal"
+    class="modal-overlay hidden"
+  >
+    <div class="modal-box">
+      <h3>Hapus Indikator</h3>
+
+      <p>
+        Anda akan menghapus
+        <strong id="deleteKode"></strong> —
+        <span id="deleteNama"></span>.
+      </p>
+
+      <div class="warning">
+        Peringatan: data yang dihapus tidak dapat dipulihkan.
+        Anda harus melakukan scraping ulang jika indikator ini dibutuhkan lagi.
+      </div>
+
+      <div class="modal-actions">
+        <button
+          class="secondary"
+          onclick="closeDeleteModal()"
+        >
+          Batal
+        </button>
+
+        <button
+          class="danger"
+          onclick="doDeleteIndicator()"
+        >
+          Ya, Hapus
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+<script>
+
+const WILAYAH_ORDER = [
+  'Prov. Kalimantan Selatan',
+  'Kab. Tanah Laut',
+  'Kab. Kotabaru',
+  'Kab. Banjar',
+  'Kab. Barito Kuala',
+  'Kab. Tapin',
+  'Kab. Hulu Sungai Selatan',
+  'Kab. Hulu Sungai Tengah',
+  'Kab. Hulu Sungai Utara',
+  'Kab. Tabalong',
+  'Kab. Tanah Bumbu',
+  'Kab. Balangan',
+  'Kota Banjarmasin',
+  'Kota Banjarbaru'
+];
+
+const WILAYAH_NORM = {};
+WILAYAH_ORDER.forEach((name, index) => {
+  WILAYAH_NORM[normRegion(name)] = index;
+});
+
+function value(id) {
+  return document
+    .getElementById(id)
+    .value
+    .trim();
+}
+
+
+function setupYearOptions() {
+  const currentYear = new Date().getFullYear();
+
+  const startSelect = document.getElementById('tahun_dari');
+  const endSelect = document.getElementById('tahun_sampai');
+
+  // Rentang cukup lebar untuk data historis sampai beberapa tahun ke depan.
+  const minYear = 2000;
+  const maxYear = currentYear + 2;
+
+  for (let year = minYear; year <= maxYear; year++) {
+    const optionStart = document.createElement('option');
+    optionStart.value = year;
+    optionStart.textContent = year;
+    startSelect.appendChild(optionStart);
+
+    const optionEnd = document.createElement('option');
+    optionEnd.value = year;
+    optionEnd.textContent = year;
+    endSelect.appendChild(optionEnd);
+  }
+
+  // Default mengikuti kebutuhan proyek saat ini.
+  startSelect.value = '2019';
+  endSelect.value = String(
+    Math.min(2025, maxYear)
+  );
+}
+
+
+function buildTahunRange() {
+  const start = Number(
+    document.getElementById('tahun_dari').value
+  );
+
+  const end = Number(
+    document.getElementById('tahun_sampai').value
+  );
+
+  if (!start || !end) {
+    throw new Error('Tahun Dari dan Sampai wajib dipilih.');
+  }
+
+  if (start > end) {
+    throw new Error(
+      'Tahun Dari tidak boleh lebih besar dari Tahun Sampai.'
+    );
+  }
+
+  if (start === end) {
+    return String(start);
+  }
+
+  return `${start}-${end}`;
+}
+
+
+function handleWilayahScope() {
+  const scope = value(
+    'wilayah_scope'
+  );
+
+  const box = document
+    .getElementById(
+      'specificWilayahBox'
+    );
+
+  if (scope === 'SPECIFIC') {
+    box.classList.remove(
+      'hidden'
+    );
+  } else {
+    box.classList.add(
+      'hidden'
+    );
+  }
+}
+
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+
+function normRegion(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+
+function escapeAttr(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+
+const MAX_SOURCES = 3;
+
+
+function addSource() {
+  const container = document.getElementById('sourceContainer');
+  const blocks = container.querySelectorAll('.source-block');
+  const current = blocks.length;
+
+  if (current >= MAX_SOURCES) {
+    return;
+  }
+
+  const next = current + 1;
+
+  const block = document.createElement('div');
+  block.className = 'source-block';
+  block.dataset.index = String(next);
+
+  block.innerHTML = `
+    <button
+      class="source-remove"
+      type="button"
+      onclick="removeSource(this)"
+    >
+      ✕ Hapus sumber
+    </button>
+
+    <div class="full">
+      <label>Sumber ${next}</label>
+      <input
+        class="source-url"
+        placeholder="https://..."
+      >
+    </div>
+
+    <div class="full">
+      <label>Ambil Data ${next}</label>
+      <textarea class="source-desc"></textarea>
+    </div>
+  `;
+
+  container.appendChild(block);
+
+  updateAddSourceButton();
+}
+
+
+function removeSource(button) {
+  const container = document.getElementById('sourceContainer');
+  const blocks = container.querySelectorAll('.source-block');
+
+  // Sumber pertama tidak boleh dihapus.
+  if (blocks.length <= 1) {
+    return;
+  }
+
+  button.closest('.source-block').remove();
+  renumberSources();
+  updateAddSourceButton();
+}
+
+
+function renumberSources() {
+  const container = document.getElementById('sourceContainer');
+
+  container
+    .querySelectorAll('.source-block')
+    .forEach((block, index) => {
+      const n = index + 1;
+      block.dataset.index = String(n);
+
+      const labels = block.querySelectorAll('label');
+      const inputs = block.querySelectorAll('input');
+
+      if (labels[0]) {
+        labels[0].textContent = `Sumber ${n}`;
+      }
+
+      if (labels[1]) {
+        labels[1].textContent = `Ambil Data ${n}`;
+      }
+
+      inputs.forEach(input => input.setAttribute('placeholder', 'https://...'));
+    });
+}
+
+
+function updateAddSourceButton() {
+  const container = document.getElementById('sourceContainer');
+  const count = container.querySelectorAll('.source-block').length;
+  const button = document.getElementById('addSourceBtn');
+
+  if (!button) {
+    return;
+  }
+
+  button.style.display =
+    count >= MAX_SOURCES
+      ? 'none'
+      : 'inline-block';
+}
+
+
+let deleteTarget = null;
+
+
+function confirmDeleteIndicator(kode, nama) {
+  deleteTarget = {
+    kode: String(kode || '').trim(),
+    nama: String(nama || '').trim()
+  };
+
+  document
+    .getElementById('deleteKode')
+    .textContent = deleteTarget.kode || '-';
+
+  document
+    .getElementById('deleteNama')
+    .textContent = deleteTarget.nama || '';
+
+  document
+    .getElementById('deleteModal')
+    .classList.remove('hidden');
+}
+
+
+function closeDeleteModal() {
+  deleteTarget = null;
+
+  document
+    .getElementById('deleteModal')
+    .classList.add('hidden');
+}
+
+
+function doDeleteIndicator() {
+  if (!deleteTarget) {
+    closeDeleteModal();
+    return;
+  }
+
+  const kode = deleteTarget.kode;
+
+  document
+    .getElementById('deleteKode')
+    .textContent = 'Menghapus...';
+
+  google.script.run
+    .withSuccessHandler(result => {
+      closeDeleteModal();
+
+      if (!result.success) {
+        alert(result.error || 'Gagal menghapus indikator.');
+        return;
+      }
+
+      alert(
+        `Indikator ${kode} dihapus.\n`
+        + `Master: ${result.deleted_master}\n`
+        + `Hasil: ${result.deleted_result}\n`
+        + `Jobs: ${result.deleted_jobs}`
+      );
+
+      refreshDashboard();
+    })
+    .withFailureHandler(error => {
+      closeDeleteModal();
+      alert(`Gagal menghapus indikator: ${error.message}`);
+    })
+    .deleteIndicator(kode);
+}
+
+
+function statusBadgeClass(status) {
+  const normalized = String(status || '').trim().toUpperCase();
+
+  if (normalized === 'SUCCESS') {
+    return 'badge badge-success';
+  }
+
+  if (normalized === 'FAILED') {
+    return 'badge badge-failed';
+  }
+
+  if (
+    normalized === 'PENDING'
+    || normalized === 'PROCESSING'
+    || normalized === 'CANCEL_REQUESTED'
+    || normalized === 'REVIEW'
+  ) {
+    return 'badge badge-pending';
+  }
+
+  if (
+    normalized === 'LINK_TIDAK_LENGKAP'
+    || normalized === 'NEED_PARSER'
+  ) {
+    return 'badge badge-warning';
+  }
+
+  if (normalized === 'SUMBER_PERLU_LOGIN') {
+    return 'badge badge-login';
+  }
+
+  if (normalized === 'DATA_TIDAK_ADA') {
+    return 'badge badge-ink';
+  }
+
+  return 'badge';
+}
+
+
+function submitForm() {
+  let tahunRange = '';
+
+  try {
+    tahunRange = buildTahunRange();
+  } catch (error) {
+    document
+      .getElementById('status')
+      .textContent =
+        `ERROR: ${error.message}`;
+
+    return;
+  }
+
+  const data = {
+    kode: value('kode'),
+    nama_indikator: value('nama_indikator'),
+    tahun: tahunRange,
+
+    wilayah_scope:
+      value('wilayah_scope'),
+
+    wilayah_specific:
+      value('wilayah_specific'),
+
+    rumus:
+      value('rumus')
+  };
+
+  // Kumpulkan sumber dari blok dinamis (maks 3).
+  document
+    .querySelectorAll('#sourceContainer .source-block')
+    .forEach((block, index) => {
+      const slot = index + 1;
+
+      data[`sumber_${slot}`] = (
+        block.querySelector('.source-url').value
+      ).trim();
+
+      data[`data_diambil_${slot}`] = (
+        block.querySelector('.source-desc').value
+      ).trim();
+    });
+
+  document
+    .getElementById('status')
+    .textContent =
+      'Membuat job...';
+
+  google.script.run
+
+    .withSuccessHandler(
+      result => {
+
+        document
+          .getElementById(
+            'status'
+          )
+          .textContent =
+            `Job dibuat.\n`
+            + `Job ID: ${result.job_id}\n`
+            + `Status: ${result.status}`;
+
+        setTimeout(
+          refreshDashboard,
+          1500
+        );
+      }
+    )
+
+    .withFailureHandler(
+      error => {
+
+        document
+          .getElementById(
+            'status'
+          )
+          .textContent =
+            `ERROR: ${error.message}`;
+      }
+    )
+
+    .submitIndicator(
+      data
+    );
+}
+
+
+function refreshDashboard() {
+  document
+    .getElementById(
+      'dashboardMeta'
+    )
+    .textContent =
+      'Memuat hasil...';
+
+  google.script.run
+
+    .withSuccessHandler(
+      renderDashboard
+    )
+
+    .withFailureHandler(
+      error => {
+
+        document
+          .getElementById(
+            'dashboardMeta'
+          )
+          .textContent =
+            `Gagal memuat dashboard: ${error.message}`;
+
+        updateWorkerStatus(null);
+      }
+    )
+
+    .getDashboardData(
+      ''
+    );
+}
+
+
+let LAST_ROWS = [];
+const COLLAPSED_STATE = {};
+
+
+function renderDashboard(data) {
+  const rows = data.results || [];
+
+  LAST_ROWS = rows;
+
+  updateMeta(rows, data.last_refresh);
+
+  renderIndicators(rows);
+
+  renderJobs(
+    data.jobs || []
+  );
+
+  updateWorkerStatus(data.worker_alive);
+}
+
+
+function updateMeta(rows, lastRefresh) {
+  const totalIndikator = new Set(
+    rows.map(row => String(row.Kode || '').trim())
+  ).size;
+
+  const successCount = rows.filter(
+    row => String(row.Status || '').toUpperCase() === 'SUCCESS'
+  ).length;
+
+  document
+    .getElementById(
+      'dashboardMeta'
+    )
+    .innerHTML =
+      `<strong>${totalIndikator}</strong> indikator`
+      + ` • <strong>${rows.length}</strong> baris hasil`
+      + ` • <strong>${successCount}</strong> SUCCESS`
+      + ` • Refresh ${lastRefresh || ''}`;
+}
+
+function updateWorkerStatus(alive) {
+  const dot = document.getElementById('workerDot');
+  const label = document.getElementById('workerLabel');
+
+  if (alive === true) {
+    dot.className = 'worker-dot alive';
+    label.textContent = 'Worker Aktif';
+  } else if (alive === false) {
+    dot.className = 'worker-dot dead';
+    label.textContent = 'Worker Offline';
+  } else {
+    dot.className = 'worker-dot';
+    dot.style.background = '#999';
+    label.textContent = 'Tidak diketahui';
+  }
+}
+
+
+function renderIndicators(rows) {
+  const container =
+    document.getElementById(
+      'resultsContainer'
+    );
+
+  if (!rows.length) {
+    container.innerHTML =
+      '<div class="empty">'
+      + 'Belum ada hasil yang sesuai.'
+      + '</div>';
+
+    return;
+  }
+
+  // Kelompokkan per (Kode + Nama_Indikator).
+  const groups = {};
+  const order = [];
+
+  rows.forEach(row => {
+    const kode = String(row.Kode || '').trim();
+    const nama = String(row.Nama_Indikator || '').trim();
+    const key = `${kode}|||${nama}`;
+
+    if (!groups[key]) {
+      groups[key] = {
+        kode: kode,
+        nama: nama,
+        rows: []
+      };
+
+      order.push(key);
+    }
+
+    groups[key].rows.push(row);
+  });
+
+  // Urutkan kelompok berdasarkan kode (numeric-aware).
+  order.sort((a, b) => {
+    const codeA = groups[a].kode;
+    const codeB = groups[b].kode;
+
+    return codeA.localeCompare(
+      codeB,
+      'id',
+      {numeric: true, sensitivity: 'base'}
+    );
+  });
+
+  const filter = value('filterKode')
+    .toLowerCase();
+
+  const filtered = order.filter(key => {
+    if (!filter) {
+      return true;
+    }
+
+    const group = groups[key];
+
+    return (
+      group.kode.toLowerCase().includes(filter)
+      || group.nama.toLowerCase().includes(filter)
+    );
+  });
+
+  if (!filtered.length) {
+    container.innerHTML =
+      '<div class="empty">'
+      + 'Tidak ada indikator yang cocok dengan filter.'
+      + '</div>';
+
+    return;
+  }
+
+  container.innerHTML =
+    `<div class="indicator-list">`
+    + filtered.map(key => {
+        const group = groups[key];
+        return indicatorCardHtml(group);
+      }).join('')
+    + `</div>`;
+
+  // Pulihkan preferensi collapse user setelah render ulang.
+  // Kartu yang belum pernah disentuh tetap collapse (default).
+  container
+    .querySelectorAll('.indicator-card')
+    .forEach(card => {
+      if (COLLAPSED_STATE[card.id] === true) {
+        card.classList.add('collapsed');
+      } else if (COLLAPSED_STATE[card.id] === false) {
+        card.classList.remove('collapsed');
+      }
+    });
+}
+
+
+function indicatorCardHtml(group) {
+  const rows = group.rows;
+
+  // Tahun & wilayah unik.
+  const years = [];
+  const yearSet = {};
+
+  rows.forEach(row => {
+    const tahun = String(row.Tahun || '').trim();
+
+    if (tahun && !yearSet[tahun]) {
+      yearSet[tahun] = true;
+      years.push(tahun);
+    }
+  });
+
+  years.sort((a, b) => Number(a) - Number(b));
+
+  const wilayahs = [];
+  const wilayahSet = {};
+
+  rows.forEach(row => {
+    const norm = normRegion(row.Wilayah);
+    const raw = String(row.Wilayah || '').trim();
+
+    if (raw && !wilayahSet[norm]) {
+      wilayahSet[norm] = true;
+      wilayahs.push(raw);
+    }
+  });
+
+  // Urutkan wilayah mengikuti urutan Kalsel, sisanya alfabetis.
+  wilayahs.sort((a, b) => {
+    const na = WILAYAH_NORM[normRegion(a)];
+    const nb = WILAYAH_NORM[normRegion(b)];
+
+    const oa = na === undefined ? 9999 : na;
+    const ob = nb === undefined ? 9999 : nb;
+
+    if (oa !== ob) {
+      return oa - ob;
+    }
+
+    if (oa === 9999) {
+      return normRegion(a).localeCompare(
+        normRegion(b),
+        'id',
+        {sensitivity: 'base'}
+      );
+    }
+
+    return 0;
+  });
+
+  // Index sel: kode|wilayah-normal|tahun.
+  const cellMap = {};
+  const cellStatus = {};
+
+  rows.forEach(row => {
+    const key = (
+      `${normRegion(row.Wilayah)}|||${String(row.Tahun || '').trim()}`
+    );
+
+    cellMap[key] = row;
+    cellStatus[key] = String(row.Status || '').toUpperCase();
+  });
+
+  let filled = 0;
+  const total = wilayahs.length * years.length;
+
+  const thead =
+    '<th class="wilayah">Wilayah</th>'
+    + years.map(year => `<th>${escapeHtml(year)}</th>`).join('');
+
+  const tbody = wilayahs.map(wilayah => {
+    const cells = years.map(year => {
+      const key = `${normRegion(wilayah)}|||${year}`;
+      const row = cellMap[key];
+
+      if (!row) {
+        return '<td class="empty-cell">—</td>';
+      }
+
+      filled++;
+
+      const status = cellStatus[key];
+      let cls = '';
+
+      if (status === 'SUCCESS') {
+        cls = 'val-success';
+      } else if (status === 'REVIEW') {
+        cls = 'val-review';
+      } else {
+        cls = 'val-failed';
+      }
+
+      return `<td class="${cls}">${escapeHtml(row.Hasil)}</td>`;
+    });
+
+    return (
+      `<tr>`
+      + `<td class="wilayah">${escapeHtml(wilayah)}</td>`
+      + cells.join('')
+      + `</tr>`
+    );
+  }).join('');
+
+  const uid = (
+    'g' + Math.abs(
+      hashString(group.kode + group.nama)
+    ).toString(36)
+  );
+
+  const summaryStatus =
+    rows.some(row => String(row.Status || '').toUpperCase() === 'REVIEW')
+      ? '<span class="badge badge-pending">REVIEW</span>'
+      : '<span class="badge badge-success">SUCCESS</span>';
+
+  return `
+    <div
+      class="indicator-card collapsed"
+      id="${uid}"
+    >
+      <div
+        class="indicator-head"
+        onclick="toggleCard('${uid}')"
+      >
+        <span class="chev">▼</span>
+
+        <span class="code">
+          ${escapeHtml(group.kode)}
+        </span>
+
+        <span class="name">
+          ${escapeHtml(group.nama)}
+        </span>
+
+        <span class="summary">
+          <span class="badge">
+            ${filled}/${total} sel terisi
+          </span>
+
+          ${summaryStatus}
+        </span>
+
+        <button
+          class="delete-btn"
+          onclick="event.stopPropagation(); confirmDeleteIndicator('${escapeAttr(group.kode)}', '${escapeAttr(group.nama)}')"
+        >
+          Hapus
+        </button>
+      </div>
+
+      <div class="indicator-body">
+        <div class="pivot-wrap">
+          <table class="pivot">
+            <thead>
+              <tr>${thead}</tr>
+            </thead>
+
+            <tbody>
+              ${tbody}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="legend">
+          <span class="lg-s">SUCCESS</span>
+          <span class="lg-r">REVIEW</span>
+          <span class="lg-e">Kosong / belum terisi</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+
+function hashString(text) {
+  let hash = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return hash;
+}
+
+
+function toggleCard(uid) {
+  const card = document.getElementById(uid);
+
+  if (!card) {
+    return;
+  }
+
+  card.classList.toggle('collapsed');
+
+  // Simpan preferensi user agar bertahan setelah refresh otomatis.
+  COLLAPSED_STATE[uid] = card.classList.contains('collapsed');
+}
+
+
+function expandAll() {
+  document
+    .querySelectorAll('.indicator-card')
+    .forEach(card => {
+      card.classList.remove('collapsed');
+      COLLAPSED_STATE[card.id] = false;
+    });
+}
+
+
+function collapseAll() {
+  document
+    .querySelectorAll('.indicator-card')
+    .forEach(card => {
+      card.classList.add('collapsed');
+      COLLAPSED_STATE[card.id] = true;
+    });
+}
+
+
+function applyFilter() {
+  // Filter dilakukan client-side agar responsif tanpa panggilan server.
+  // renderIndicators() membaca nilai filter dari input secara langsung.
+  const filter = value('filterKode')
+    .toLowerCase()
+    .trim();
+
+  renderIndicators(LAST_ROWS);
+
+  const filtered = LAST_ROWS.filter(row =>
+    !filter
+    || String(row.Kode || '').toLowerCase().includes(filter)
+    || String(row.Nama_Indikator || '').toLowerCase().includes(filter)
+  );
+
+  updateMeta(filtered, '');
+}
+
+
+function renderJobs(jobs) {
+
+  const container =
+    document.getElementById(
+      'jobsContainer'
+    );
+
+  if (!jobs.length) {
+    container.innerHTML =
+      '<div class="empty">'
+      + 'Belum ada job.'
+      + '</div>';
+
+    return;
+  }
+
+  container.innerHTML =
+    jobs.map(job => {
+      const status = String(
+        job.Status || ''
+      ).toUpperCase();
+
+      let actionHtml = '';
+
+      if (
+        status === 'PENDING'
+        || status === 'PROCESSING'
+      ) {
+        actionHtml = `
+          <button
+            class="danger"
+            onclick="cancelJob('${escapeHtml(job.Job_ID)}')"
+          >
+            Batalkan
+          </button>
+        `;
+      } else if (
+        status === 'CANCEL_REQUESTED'
+      ) {
+        actionHtml = `
+          <button
+            class="danger"
+            disabled
+          >
+            Membatalkan...
+          </button>
+        `;
+      }
+
+      return `
+        <div class="job">
+
+          <div>
+            <strong>
+              ${escapeHtml(job.Kode)}
+            </strong>
+
+            <br>
+
+            ${escapeHtml(job.Job_ID)}
+          </div>
+
+          <div style="
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+            justify-content:flex-end;
+          ">
+            <span class="${statusBadgeClass(job.Status)}">
+              ${escapeHtml(job.Status)}
+            </span>
+
+            <span>
+              ${escapeHtml(job.Progress)}%
+            </span>
+
+            ${actionHtml}
+          </div>
+
+        </div>
+      `;
+    }).join('');
+}
+
+
+function cancelJob(jobId) {
+  const okay = confirm(
+    'Batalkan job ini?\n\n'
+    + 'Jika job sedang diproses, worker akan menghentikan proses tersebut.'
+  );
+
+  if (!okay) {
+    return;
+  }
+
+  google.script.run
+
+    .withSuccessHandler(result => {
+      if (!result.success) {
+        alert(
+          result.error
+          || 'Job tidak dapat dibatalkan.'
+        );
+      }
+
+      refreshDashboard();
+    })
+
+    .withFailureHandler(error => {
+      alert(
+        `Gagal membatalkan job: ${error.message}`
+      );
+    })
+
+    .cancelJob(jobId);
+}
+
+
+
+setupYearOptions();
+handleWilayahScope();
+refreshDashboard();
+
+setInterval(
+  refreshDashboard,
+  10000
+);
+
+</script>
+
+</body>
+</html>

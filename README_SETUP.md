@@ -23,6 +23,17 @@ Google Apps Script Web Form
 6. Dashboard kompleks yang gagal menjadi NEED_PARSER.
 7. Result upsert memakai Kode + Wilayah + Tahun.
 
+## Modul Legacy
+
+Modul source lama yang masih dipakai sudah dibundel di `legacy_indicators/`
+(`utils`, `ojk`, `bi_i12`, `bi_i19`, `bps`, `brin`, `ibei`). Tidak perlu lagi
+folder `Scraping_Indikator\indicators` eksternal — hasil clone di mesin mana
+pun sudah lengkap.
+
+`config.py` memakai folder bundel secara default. Jika ingin memakai folder
+legacy eksternal, isi `LEGACY_INDICATORS_PATH` di `.env` dan pastikan foldernya
+benar-benar ada.
+
 ## Menjalankan
 
 Aktifkan virtual environment lalu:

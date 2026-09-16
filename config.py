@@ -7,10 +7,18 @@ load_dotenv()
 
 APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL", "").strip()
 APPS_SCRIPT_TOKEN = os.getenv("APPS_SCRIPT_TOKEN", "").strip()
-LEGACY_INDICATORS_PATH = os.getenv(
-    "LEGACY_INDICATORS_PATH",
-    r"D:\MagangHub\Scraping_Indikator\indicators",
-).strip()
+
+# Modul legacy kini dibundel di dalam repo (legacy_indicators/).
+# LEGACY_INDICATORS_PATH dari .env hanya dipakai bila foldernya benar-benar
+# ada; jika tidak, otomatis jatuh ke folder bundel. Dengan begitu hasil
+# clone di mesin mana pun langsung lengkap tanpa folder legacy eksternal.
+_BUNDLED_LEGACY_PATH = Path(__file__).resolve().parent / "legacy_indicators"
+_ENV_LEGACY_PATH = os.getenv("LEGACY_INDICATORS_PATH", "").strip()
+
+if _ENV_LEGACY_PATH and Path(_ENV_LEGACY_PATH).is_dir():
+    LEGACY_INDICATORS_PATH = _ENV_LEGACY_PATH
+else:
+    LEGACY_INDICATORS_PATH = str(_BUNDLED_LEGACY_PATH)
 
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "10"))
 JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "900"))

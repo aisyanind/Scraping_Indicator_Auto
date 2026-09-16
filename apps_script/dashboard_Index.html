@@ -1,0 +1,6576 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Dashboard Data Indikator</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+
+<style>
+
+/* =====================================================
+   PANEL PEMENUHAN PIC
+===================================================== */
+
+.pic-card {
+  background: white;
+  border: 1px solid #ececec;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.035);
+  margin-top: 40px;
+  margin-bottom: 22px;
+}
+
+.pic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.pic-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pic-subtitle {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.pic-filter {
+  width: 260px;
+}
+
+.pic-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+/* =====================================================
+   KARTU RINGKASAN SEMUA PIC (grid)
+===================================================== */
+
+.pic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.pic-item {
+  background: #fafafa;
+  border: 1px solid #ececec;
+  border-radius: 14px;
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: box-shadow .2s ease, border-color .2s ease;
+}
+
+.pic-item:hover {
+  border-color: #f2c99a;
+  box-shadow: 0 6px 18px rgba(0,0,0,.05);
+}
+
+.pic-item-top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 14px;
+}
+
+.pic-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #f28c28;
+}
+
+.pic-avatar svg {
+  width: 19px;
+  height: 19px;
+}
+
+.pic-item-id {
+  min-width: 0;
+}
+
+.pic-item-name {
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pic-item-count {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.pic-item-pct {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 750;
+  color: #222;
+  flex-shrink: 0;
+}
+
+.pic-item-big {
+  font-size: 27px;
+  font-weight: 750;
+  color: #222;
+  margin-bottom: 10px;
+}
+
+.pic-item-track {
+  height: 8px;
+  background: #eee;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pic-item-fill {
+  height: 100%;
+  background: #f28c28;
+  border-radius: 10px;
+  transition: width .4s ease;
+}
+
+@media(max-width: 1000px) {
+  .pic-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media(max-width: 650px) {
+  .pic-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pic-summary-item {
+  background: #fafafa;
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.pic-summary-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 7px;
+}
+
+.pic-summary-value {
+  font-size: 20px;
+  font-weight: 750;
+  color: #222;
+}
+
+.pic-summary-subvalue {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #888;
+  line-height: 1.45;
+}
+
+.pic-progress-summary {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #eeeeee;
+}
+
+.pic-progress-summary-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.pic-progress-summary-track {
+  width: 100%;
+  height: 10px;
+  background: #eeeeee;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.pic-progress-summary-fill {
+  height: 100%;
+  background: #f28c28;
+  border-radius: 20px;
+}
+
+.pic-progress-summary-meta {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #888;
+  line-height: 1.55;
+}
+
+
+.pic-table-wrap {
+  overflow-x: auto;
+}
+
+.pic-table {
+  width: 100%;
+  min-width: 1700px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.pic-table th {
+  background: #fafafa;
+  color: #555;
+  text-align: center;
+  vertical-align: middle;
+  padding: 14px 14px;
+  border-bottom: 1px solid #e5e5e5;
+  white-space: nowrap;
+}
+
+.pic-table td {
+  padding: 16px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  height: 64px;
+}
+
+.pic-table th:nth-child(1),
+.pic-table td:nth-child(1) {
+  width: 85px;
+}
+
+.pic-table th:nth-child(2),
+.pic-table td:nth-child(2) {
+  width: 330px;
+}
+
+.pic-table th:nth-child(3),
+.pic-table td:nth-child(3) {
+  width: 185px;
+  white-space: nowrap;
+}
+
+.pic-table th:nth-child(4),
+.pic-table td:nth-child(4) {
+  width: 280px;
+}
+
+/* Tindak Lanjut biasanya hanya "OK", jadi dibuat ringkas */
+.pic-table th:nth-child(5),
+.pic-table td:nth-child(5) {
+  width: 110px;
+  text-align: center;
+}
+
+.pic-table th:nth-child(6),
+.pic-table td:nth-child(6) {
+  width: 300px;
+}
+
+.pic-table th:nth-child(7),
+.pic-table td:nth-child(7) {
+  width: 410px;
+}
+
+/* Semua isi Detail PIC disejajarkan secara horizontal dan vertikal */
+.pic-table tbody tr {
+  min-height: 64px;
+}
+
+.pic-table td:nth-child(3) {
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.pic-table td:nth-child(4) {
+  padding-left: 22px;
+  padding-right: 22px;
+}
+
+/* Progress bar dipusatkan di dalam cell agar tidak menempel ke kolom sebelah */
+.pic-table td:nth-child(3) .pic-progress {
+  display: inline-block;
+  margin-left: 0;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.pic-table td:nth-child(3) .pic-percentage {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+
+.pic-table tr:hover td {
+  background: #fffaf5;
+}
+
+/* Tabel perbandingan Semua PIC: Total / Sudah / Belum / % */
+.pic-compare-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.pic-compare-table th {
+  background: #fafafa;
+  color: #555;
+  text-align: center;
+  padding: 14px;
+  border-bottom: 1px solid #e5e5e5;
+  white-space: nowrap;
+}
+
+.pic-compare-table td {
+  padding: 16px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.pic-compare-table th:first-child,
+.pic-compare-table td:first-child {
+  text-align: left;
+}
+
+.pic-compare-table tr:hover td {
+  background: #fffaf5;
+}
+
+.pic-name {
+  font-weight: 700;
+}
+
+.pic-progress {
+  width: 130px;
+  height: 8px;
+  background: #eeeeee;
+  border-radius: 10px;
+  overflow: hidden;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.pic-progress-bar {
+  height: 100%;
+  width: 0;
+  background: #f28c28 !important;
+  border-radius: 10px;
+  transition: width 0.4s ease;
+}
+
+.pic-percentage {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pic-detail-header {
+  display: none;
+}
+
+#picDetail .pic-table-wrap {
+  margin-top: 22px;
+}
+
+.pic-detail-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pic-detail-subtitle {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+@media(max-width: 650px) {
+
+  .pic-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .pic-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pic-filter {
+    width: 100% !important;
+  }
+
+}
+
+
+/* =====================================================
+   GLOBAL
+===================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  background: #f7f8fa;
+  color: #202124;
+}
+
+
+/* =====================================================
+   HEADER
+===================================================== */
+
+.header {
+  background: white;
+  border-bottom: 1px solid #e9eaec;
+  padding: 22px 38px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  position: sticky;
+  top: 0;
+  z-index: 3000;
+}
+
+.logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.header-text h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+.header-text p {
+  margin: 4px 0 0;
+  color: #777;
+  font-size: 13px;
+}
+
+.orange-line {
+  width: 5px;
+  height: 40px;
+  background: #f28c28;
+  border-radius: 5px;
+}
+
+
+/* =====================================================
+   CONTAINER
+===================================================== */
+
+.container {
+  max-width: 1450px;
+  margin: auto;
+  padding: 28px 32px 60px;
+}
+
+
+/* =====================================================
+   FILTER
+===================================================== */
+
+.filter-card {
+  background: white;
+  border: 1px solid #ececec;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.04);
+  margin-bottom: 22px;
+}
+
+.filter-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1fr 1fr;
+  gap: 14px;
+}
+
+.filter-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.filter-box label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #666;
+}
+
+select {
+  width: 100%;
+  height: 40px;
+  border: 1px solid #ddd;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: white;
+  font-size: 13px;
+  outline: none;
+}
+
+select:focus {
+  border-color: #f28c28;
+  box-shadow: 0 0 0 3px rgba(242,140,40,.10);
+}
+
+
+/* =====================================================
+   REGION DROPDOWN
+===================================================== */
+
+.region-selector {
+  position: relative;
+}
+
+.region-dropdown {
+  position: relative;
+}
+
+.region-button {
+  width: 100%;
+  height: 40px;
+  border: 1px solid #ddd;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: white;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.region-button:hover {
+  border-color: #f28c28;
+}
+
+.region-button::after {
+  content: "▾";
+  color: #777;
+  font-size: 13px;
+}
+
+.region-menu {
+  display: none;
+  position: absolute;
+  top: 46px;
+  left: 0;
+  width: 100%;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 2000;
+  padding: 8px;
+  max-height: 330px;
+  overflow-y: auto;
+}
+
+.region-menu.show {
+  display: block;
+}
+
+.region-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #444;
+}
+
+.region-option:hover {
+  background: #fff8f1;
+}
+
+.region-option input {
+  width: 15px;
+  height: 15px;
+  accent-color: #f28c28;
+  cursor: pointer;
+}
+
+.region-option strong {
+  font-weight: 700;
+}
+
+.region-divider {
+  height: 1px;
+  background: #eee;
+  margin: 5px 0;
+}
+
+.region-actions {
+  display: flex;
+  gap: 7px;
+  padding: 7px 5px 5px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.region-action-btn {
+  border: 1px solid #ddd;
+  background: white;
+  color: #555;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.region-action-btn:hover {
+  border-color: #f28c28;
+  color: #e87516;
+}
+
+
+/* =====================================================
+   KPI
+===================================================== */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.kpi {
+  background: white;
+  border: 1px solid #ececec;
+  border-radius: 15px;
+  padding: 20px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.035);
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background: #f28c28;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: #777;
+  margin-bottom: 8px;
+}
+
+.kpi-value {
+  font-size: 25px;
+  font-weight: 750;
+  color: #222;
+}
+
+
+/* =====================================================
+   VISUAL
+===================================================== */
+
+.visual-grid {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.card {
+  background: white;
+  border: 1px solid #ececec;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.035);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.card-subtitle {
+  font-size: 11px;
+  color: #888;
+  margin-top: 3px;
+}
+
+.chart {
+  width: 100%;
+  height: 480px;
+}
+
+.chart-legend {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px 14px;
+}
+
+@media (max-width: 1000px) {
+  .chart-legend {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .chart-legend {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+
+/* =====================================================
+   MAP
+===================================================== */
+
+.map-wrapper {
+  position: relative;
+}
+
+#map {
+  width: 100%;
+  height: 510px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.map-year {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 500;
+  background: rgba(255,255,255,.95);
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.12);
+}
+
+.map-year strong {
+  display: block;
+  font-size: 17px;
+  margin-top: 2px;
+}
+
+.map-data {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+}
+
+.map-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  background: #fafafa;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.map-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+
+/* =====================================================
+   TABLE
+===================================================== */
+
+.table-card {
+  margin-top: 22px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th {
+  background: #fafafa;
+  color: #555;
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid #e5e5e5;
+  white-space: nowrap;
+}
+
+td {
+  padding: 13px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+tr:hover td {
+  background: #fffaf5;
+}
+
+.code {
+  font-weight: 700;
+  color: #e87516;
+}
+
+.progress {
+  width: 100px;
+  height: 7px;
+  background: #eee;
+  border-radius: 10px;
+  overflow: hidden;
+  display: inline-block;
+  margin-right: 7px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #f28c28;
+}
+
+.btn {
+  border: none;
+  background: #f28c28;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.btn:hover {
+  background: #e77b18;
+}
+
+
+/* =====================================================
+   DETAIL
+===================================================== */
+
+.detail-card {
+  margin-top: 22px;
+  display: none;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.definition {
+  background: #fff8f1;
+  border-left: 4px solid #f28c28;
+  padding: 13px 15px;
+  border-radius: 8px;
+  margin: 15px 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.detail-notes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin: 15px 0 20px;
+}
+
+.detail-note {
+  background: #fafafa;
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.detail-note-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-bottom: 6px;
+}
+
+.detail-note-value {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  white-space: pre-wrap;
+}
+
+@media(max-width: 650px) {
+  .detail-notes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detail-table {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.detail-table table {
+  min-width: 700px;
+}
+
+.detail-table th:first-child,
+.detail-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: #fafafa;
+  z-index: 1;
+}
+
+.detail-table td:first-child {
+  background: #ffffff;
+  font-weight: 700;
+}
+
+
+/* =====================================================
+   LOADING
+===================================================== */
+
+.loading {
+  position: fixed;
+  inset: 0;
+  background: rgba(255,255,255,.92);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spinner {
+  width: 35px;
+  height: 35px;
+  border: 3px solid #eee;
+  border-top-color: #f28c28;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+
+@media(max-width: 1000px) {
+
+  .filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .visual-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+}
+
+@media(max-width: 650px) {
+
+  .container {
+    padding: 18px 14px;
+  }
+
+  .header {
+    padding: 16px 18px;
+  }
+
+  .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .header-text h1 {
+    font-size: 18px;
+  }
+
+}
+
+
+/* =====================================================
+   MAP LABEL
+===================================================== */
+
+.google-visualization-tooltip {
+  border-radius: 8px !important;
+}
+
+.leaflet-popup-content {
+  font-family: Inter, Arial, sans-serif;
+  font-size: 12px;
+}
+
+.map-region-label {
+  background: transparent !important;
+  border: transparent !important;
+  box-shadow: none !important;
+  color: #24313f;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(255,255,255,.95);
+  pointer-events: none;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.map-region-label::before {
+  display: none !important;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<!-- =====================================================
+     LOADING
+===================================================== -->
+
+<div id="loading" class="loading">
+
+  <div class="spinner"></div>
+
+  <div style="font-size:13px;color:#777">
+    Memuat dashboard...
+  </div>
+
+</div>
+
+
+<!-- =====================================================
+     HEADER
+===================================================== -->
+
+<header class="header">
+
+  <img
+    class="logo"
+    src="https://upload.wikimedia.org/wikipedia/commons/2/28/Logo_BPS_%28Badan_Pusat_Statistik%29.svg"
+    onerror="this.style.display='none'"
+  >
+
+  <div class="orange-line"></div>
+
+  <div class="header-text">
+
+    <h1>
+      Dashboard Data Indikator
+    </h1>
+
+    <p>
+      Monitoring dan Visualisasi Data Indikator
+    </p>
+
+  </div>
+
+</header>
+
+
+<main class="container">
+
+
+<!-- =====================================================
+     FILTER DATA
+===================================================== -->
+
+<section class="filter-card">
+
+  <div class="filter-title">
+    Filter Data
+  </div>
+
+  <div class="filters">
+
+    <div class="filter-box">
+
+      <label>
+        Indikator
+      </label>
+
+      <select id="indicatorFilter">
+
+        <option value="">
+          Semua indikator
+        </option>
+
+      </select>
+
+    </div>
+
+
+    <div class="filter-box region-selector">
+
+      <label>
+        Wilayah
+      </label>
+
+      <div class="region-dropdown">
+
+        <button
+          type="button"
+          id="regionButton"
+          class="region-button"
+        >
+          Semua wilayah
+        </button>
+
+        <div
+          id="regionMenu"
+          class="region-menu"
+        >
+
+          <div class="region-actions">
+
+            <button
+              type="button"
+              class="region-action-btn"
+              onclick="selectAllRegions()"
+            >
+              Pilih Semua
+            </button>
+
+            <button
+              type="button"
+              class="region-action-btn"
+              onclick="clearAllRegions()"
+            >
+              Hapus Semua
+            </button>
+
+          </div>
+
+          <div id="regionOptions"></div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="filter-box">
+
+      <label>
+        Tahun Mulai
+      </label>
+
+      <select id="startYear">
+
+        <option value="">
+          Semua
+        </option>
+
+      </select>
+
+    </div>
+
+
+    <div class="filter-box">
+
+      <label>
+        Tahun Akhir
+      </label>
+
+      <select id="endYear">
+
+        <option value="">
+          Semua
+        </option>
+
+      </select>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =====================================================
+     KPI
+===================================================== -->
+
+<section class="kpi-grid">
+
+  <div class="kpi">
+
+    <div class="kpi-label">
+      Indikator
+    </div>
+
+    <div
+      class="kpi-value"
+      id="kpiIndicator"
+    >
+      -
+    </div>
+
+  </div>
+
+
+  <div class="kpi">
+
+    <div class="kpi-label">
+      Data Terisi
+    </div>
+
+    <div
+      class="kpi-value"
+      id="kpiFilled"
+    >
+      -
+    </div>
+
+  </div>
+
+
+  <div class="kpi">
+
+    <div class="kpi-label">
+      Tahun Terbaru
+    </div>
+
+    <div
+      class="kpi-value"
+      id="kpiYear"
+    >
+      -
+    </div>
+
+  </div>
+
+
+  <div class="kpi">
+
+    <div class="kpi-label">
+      Wilayah
+    </div>
+
+    <div
+      class="kpi-value"
+      id="kpiRegion"
+    >
+      Semua
+    </div>
+
+  </div>
+
+</section>
+
+<!-- =====================================================
+     VISUALISASI
+===================================================== -->
+
+<section class="visual-grid">
+
+
+  <!-- GRAFIK -->
+
+  <div class="card">
+
+    <div class="card-header">
+
+      <div>
+
+        <div class="card-title">
+          Perkembangan Nilai Indikator
+        </div>
+
+        <div class="card-subtitle">
+          Perubahan nilai berdasarkan tahun dan wilayah
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="chart-with-legend">
+
+      <div
+        id="chart"
+        class="chart"
+      ></div>
+
+      <div
+        id="chartLegend"
+        class="chart-legend"
+      ></div>
+
+    </div>
+
+  </div>
+
+
+  <!-- PETA -->
+
+  <div class="card">
+
+    <div class="card-header">
+
+      <div>
+
+        <div class="card-title">
+          Distribusi Wilayah
+        </div>
+
+        <div class="card-subtitle">
+          Nilai indikator pada wilayah terpilih
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="map-wrapper">
+
+      <div id="map"></div>
+
+      <div class="map-year">
+
+        Tahun
+
+        <strong id="mapYear">
+          -
+        </strong>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =====================================================
+     DAFTAR INDIKATOR
+===================================================== -->
+
+<section class="card table-card">
+
+  <div class="card-header">
+
+    <div>
+
+      <div class="card-title">
+        Daftar Indikator
+      </div>
+
+      <div class="card-subtitle">
+        Kelengkapan dan definisi indikator
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div class="table-wrap">
+
+    <table>
+
+      <thead>
+
+        <tr>
+
+          <th>
+            Kode
+          </th>
+
+          <th>
+            Indikator
+          </th>
+
+          <th>
+            Definisi
+          </th>
+
+          <th>
+            Data Terisi
+          </th>
+
+          <th>
+            Aksi
+          </th>
+
+        </tr>
+
+      </thead>
+
+      <tbody id="indicatorTable"></tbody>
+
+    </table>
+
+  </div>
+
+</section>
+
+
+<!-- =====================================================
+     DETAIL INDIKATOR
+===================================================== -->
+
+<section
+  id="detailCard"
+  class="card detail-card"
+>
+
+  <div class="detail-header">
+
+    <div>
+
+      <div
+        id="detailTitle"
+        class="card-title"
+      ></div>
+
+      <div
+        id="detailCode"
+        class="card-subtitle"
+      ></div>
+
+    </div>
+
+  </div>
+
+
+  <div class="detail-notes-grid">
+
+    <div class="detail-note">
+
+      <div class="detail-note-label">
+        Sumber Data (Metadata)
+      </div>
+
+      <div
+        class="detail-note-value"
+        id="detailSourceMetadata"
+      >
+        —
+      </div>
+
+    </div>
+
+
+    <div class="detail-note">
+
+      <div class="detail-note-label">
+        Coverage Terkecil
+      </div>
+
+      <div
+        class="detail-note-value"
+        id="detailCoverage"
+      >
+        —
+      </div>
+
+    </div>
+
+
+    <div class="detail-note">
+
+      <div class="detail-note-label">
+        Frekuensi
+      </div>
+
+      <div
+        class="detail-note-value"
+        id="detailFrequency"
+      >
+        —
+      </div>
+
+    </div>
+
+
+    <div class="detail-note">
+
+      <div class="detail-note-label">
+        Sumber Data/Kegiatan
+      </div>
+
+      <div
+        class="detail-note-value"
+        id="detailSourceActivity"
+      >
+        —
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div
+    class="card-title"
+    style="margin-bottom:12px"
+  >
+    Data Nilai
+  </div>
+
+
+  <div class="detail-table">
+
+    <table>
+
+      <thead>
+
+        <tr id="detailTableHead">
+
+          <th>
+            Wilayah
+          </th>
+
+        </tr>
+
+      </thead>
+
+      <tbody id="detailTable"></tbody>
+
+    </table>
+
+  </div>
+
+</section>
+
+<section id="picSection" class="pic-card">
+
+  <div class="pic-header">
+
+    <div>
+
+      <div class="pic-title">
+        Pemenuhan PIC 2026
+      </div>
+
+      <div class="pic-subtitle">
+        Monitoring pemenuhan data berdasarkan penanggung jawab indikator tahun 2026
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- ===================================================
+       AKSES PIC
+  =================================================== -->
+
+  <div id="picAccessPanel">
+
+    <div
+      style="
+        background:#fafafa;
+        border:1px solid #ececec;
+        border-radius:12px;
+        padding:22px;
+        max-width:520px;
+      "
+    >
+
+      <div
+        style="
+          font-size:14px;
+          font-weight:700;
+          margin-bottom:6px;
+        "
+      >
+        Akses Tim PIC
+      </div>
+
+      <div
+        style="
+          font-size:12px;
+          color:#777;
+          line-height:1.5;
+          margin-bottom:15px;
+        "
+      >
+        Masukkan kode akses tim untuk melihat data Pemenuhan PIC 2026.
+      </div>
+
+      <div
+        style="
+          display:flex;
+          gap:9px;
+          align-items:center;
+        "
+      >
+
+        <input
+          id="picAccessCode"
+          type="password"
+          autocomplete="off"
+          placeholder="Kode akses"
+          style="
+            flex:1;
+            min-width:0;
+            height:40px;
+            border:1px solid #ddd;
+            border-radius:9px;
+            padding:0 12px;
+            font-size:13px;
+            outline:none;
+          "
+        >
+
+        <button
+          type="button"
+          id="picAccessButton"
+          class="btn"
+          onclick="unlockPICAccess()"
+          style="
+            height:40px;
+            padding:0 18px;
+            white-space:nowrap;
+          "
+        >
+          Buka Akses
+        </button>
+
+      </div>
+
+      <div
+        id="picAccessMessage"
+        style="
+          margin-top:10px;
+          font-size:11px;
+          min-height:16px;
+        "
+      ></div>
+
+    </div>
+
+  </div>
+
+
+  <!-- ===================================================
+       KONTEN PIC
+  =================================================== -->
+
+  <div id="picUnlockedContent" style="display:none;">
+
+    <div
+      style="
+        display:flex;
+        justify-content:flex-end;
+        margin-bottom:18px;
+      "
+    >
+
+      <div class="pic-filter">
+
+        <select id="picFilter">
+
+          <option value="">
+            Semua PIC
+          </option>
+
+        </select>
+
+      </div>
+
+    </div>
+
+
+    <div id="picSummary">
+
+      <div class="empty">
+        Memuat data PIC...
+      </div>
+
+    </div>
+
+
+    <div id="picDetail" style="display:none;">
+
+      <div class="pic-detail-header">
+
+        <div
+          class="pic-detail-title"
+          id="picDetailTitle"
+        ></div>
+
+        <div
+          class="pic-detail-subtitle"
+          id="picDetailSubtitle"
+        ></div>
+
+      </div>
+
+
+      <div class="pic-table-wrap">
+
+        <table class="pic-table">
+
+          <thead>
+
+            <tr>
+
+              <th>Kode</th>
+              <th>Indikator</th>
+              <th>Pemenuhan</th>
+              <th>Catatan Pemeriksaan</th>
+              <th>Tindak Lanjut</th>
+              <th>Catatan Januari 2026</th>
+              <th>Catatan</th>
+
+            </tr>
+
+          </thead>
+
+          <tbody id="picDetailBody"></tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+</main>
+
+
+<script>
+
+let dashboard = null;
+
+let indicatorDataCache = {};
+
+let map = null;
+
+let geoJsonLayer = null;
+
+let geoData = null;
+
+let selectedRegions = [];
+
+let picAccessGranted = false;
+
+const PROVINCE_NAME = "Kalimantan Selatan";
+
+
+google.charts.load(
+  'current',
+  {
+    packages: ['corechart']
+  }
+);
+
+
+/* =====================================================
+   INIT
+===================================================== */
+
+document.addEventListener(
+  'DOMContentLoaded',
+  function() {
+
+    initializeRegionDropdown();
+
+    loadDashboard();
+
+  }
+);
+
+
+/* =====================================================
+   LOAD DASHBOARD
+===================================================== */
+
+function loadDashboard() {
+
+  google.script.run
+
+    .withSuccessHandler(
+      function(data) {
+
+        dashboard = data || {};
+
+        picAccessGranted = false;
+
+        const accessPanel =
+          document.getElementById('picAccessPanel');
+
+        const unlockedContent =
+          document.getElementById('picUnlockedContent');
+
+        if (accessPanel) {
+          accessPanel.style.display = 'block';
+        }
+
+        if (unlockedContent) {
+          unlockedContent.style.display = 'none';
+        }
+
+        buildFilters();
+
+        updateDashboard();
+
+        hideLoading();
+
+        requestAnimationFrame(function() {
+          initializeMap();
+        });
+
+      }
+    )
+
+    .withFailureHandler(
+      function(error) {
+
+        console.error(error);
+
+        document.getElementById(
+          'loading'
+        ).innerHTML =
+
+          '<div style="color:#c00">' +
+
+          'Gagal memuat dashboard.<br>' +
+
+          escapeHtml(
+            error.message || error
+          ) +
+
+          '</div>';
+
+      }
+    )
+
+    .getDashboardMeta();
+
+}
+
+
+/* =====================================================
+   BUKA AKSES PIC
+===================================================== */
+
+function unlockPICAccess() {
+
+  const input =
+    document.getElementById('picAccessCode');
+
+  const button =
+    document.getElementById('picAccessButton');
+
+  const message =
+    document.getElementById('picAccessMessage');
+
+  const accessCode =
+    String(input.value || '').trim();
+
+  if (!accessCode) {
+
+    message.style.color = '#c0392b';
+    message.textContent = 'Masukkan kode akses terlebih dahulu.';
+    input.focus();
+    return;
+
+  }
+
+  button.disabled = true;
+  button.textContent = 'Memeriksa...';
+
+  message.style.color = '#777';
+  message.textContent = 'Memverifikasi kode akses...';
+
+  google.script.run
+
+    .withSuccessHandler(
+      function(picData) {
+
+        applyPICData(picData);
+
+        picAccessGranted = true;
+
+        document.getElementById(
+          'picAccessPanel'
+        ).style.display = 'none';
+
+        document.getElementById(
+          'picUnlockedContent'
+        ).style.display = 'block';
+
+        input.value = '';
+
+        buildPICFilter();
+        updatePICFilter();
+        updatePICDashboard();
+
+        button.disabled = false;
+        button.textContent = 'Buka Akses';
+
+      }
+    )
+
+    .withFailureHandler(
+      function(error) {
+
+        console.error('PIC ACCESS:', error);
+
+        picAccessGranted = false;
+
+        message.style.color = '#c0392b';
+        message.textContent =
+          error && error.message
+            ? error.message
+            : 'Kode akses tidak valid.';
+
+        button.disabled = false;
+        button.textContent = 'Buka Akses';
+
+        input.select();
+
+      }
+    )
+
+    .getPICData(accessCode);
+
+}
+
+
+/* =====================================================
+   GABUNGKAN DATA PIC DENGAN DASHBOARD
+===================================================== */
+
+function applyPICData(picData) {
+
+  if (
+    !dashboard ||
+    !Array.isArray(dashboard.indicators)
+  ) {
+    return;
+  }
+
+  picData = picData || {};
+
+  const picIndicators =
+    Array.isArray(picData.indicators)
+      ? picData.indicators
+      : [];
+
+  const picByRow = {};
+
+  picIndicators.forEach(function(item) {
+
+    picByRow[String(item.row)] =
+      item.pic2026 || '';
+
+  });
+
+  dashboard.indicators.forEach(function(item) {
+
+    item.pic2026 =
+      picByRow[String(item.row)] || '';
+
+  });
+
+  dashboard.pic2026 =
+    Array.isArray(picData.pic2026)
+      ? picData.pic2026
+      : [];
+
+}
+
+
+/* =====================================================
+   ENTER UNTUK BUKA AKSES PIC
+===================================================== */
+
+document.addEventListener(
+  'DOMContentLoaded',
+  function() {
+
+    const input =
+      document.getElementById('picAccessCode');
+
+    if (!input) return;
+
+    input.addEventListener(
+      'keydown',
+      function(event) {
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          unlockPICAccess();
+        }
+
+      }
+    );
+
+  }
+);
+
+
+/* =====================================================
+   BUILD FILTER
+===================================================== */
+
+function buildFilters() {
+
+  const indicator =
+    document.getElementById(
+      'indicatorFilter'
+    );
+
+  indicator.innerHTML =
+    '<option value="">Semua indikator</option>';
+
+  (dashboard.indicators || []).forEach(
+    function(item) {
+
+      const option =
+        document.createElement(
+          'option'
+        );
+
+      option.value =
+        item.code;
+
+      option.textContent =
+        item.code +
+        ' — ' +
+        item.name;
+
+      indicator.appendChild(
+        option
+      );
+
+    }
+  );
+
+
+  buildRegionCheckboxes();
+
+
+  const start =
+    document.getElementById(
+      'startYear'
+    );
+
+  const end =
+    document.getElementById(
+      'endYear'
+    );
+
+
+  start.innerHTML =
+    '<option value="">Semua</option>';
+
+  end.innerHTML =
+    '<option value="">Semua</option>';
+
+
+  (dashboard.years || []).forEach(
+    function(year) {
+
+      const a =
+        document.createElement(
+          'option'
+        );
+
+      a.value = year;
+
+      a.textContent = year;
+
+      start.appendChild(a);
+
+
+      const b =
+        document.createElement(
+          'option'
+        );
+
+      b.value = year;
+
+      b.textContent = year;
+
+      end.appendChild(b);
+
+    }
+  );
+
+
+  indicator.addEventListener(
+    'change',
+    function() {
+
+      updateDashboard();
+
+      if (picAccessGranted === true) {
+        updatePICFilter();
+        updatePICDashboard();
+      }
+
+    }
+  );
+
+
+  start.addEventListener(
+    'change',
+    updateDashboard
+  );
+
+  end.addEventListener(
+    'change',
+    updateDashboard
+  );
+
+}
+
+/* =====================================================
+   BUILD PIC FILTER
+===================================================== */
+function buildPICFilter() {
+
+  if (picAccessGranted !== true) return;
+
+  const picFilter =
+    document.getElementById('picFilter');
+
+  if (!picFilter) return;
+
+  picFilter.innerHTML =
+    '<option value="">Semua PIC</option>';
+
+
+  /*
+   * Gunakan daftar yang sudah dibuat backend.
+   * Lebih ringan daripada memindai seluruh indikator lagi.
+   */
+  (dashboard.pic2026 || []).forEach(
+    function(pic) {
+
+      if (!pic) return;
+
+      const option =
+        document.createElement('option');
+
+      option.value = pic;
+
+      option.textContent = pic;
+
+      picFilter.appendChild(option);
+
+    }
+  );
+
+
+  picFilter.onchange =
+    updatePICDashboard;
+
+}
+
+function updatePICFilter() {
+
+  if (picAccessGranted !== true) return;
+
+  const picFilter =
+    document.getElementById('picFilter');
+
+  const selectedIndicator =
+    document.getElementById('indicatorFilter').value;
+
+
+  picFilter.innerHTML = '';
+
+
+  /*
+   * =====================================================
+   * SEMUA INDIKATOR
+   * =====================================================
+   */
+
+  if (!selectedIndicator) {
+
+    const option =
+      document.createElement('option');
+
+    option.value = '';
+
+    option.textContent =
+      'Semua PIC';
+
+    picFilter.appendChild(option);
+
+
+    (dashboard.pic2026 || []).forEach(function(pic) {
+
+      if (!pic) return;
+
+      const option =
+        document.createElement('option');
+
+      option.value = pic;
+
+      option.textContent = pic;
+
+      picFilter.appendChild(option);
+
+    });
+
+    return;
+
+  }
+
+
+  /*
+   * =====================================================
+   * INDIKATOR DIPILIH
+   * =====================================================
+   */
+
+  const indicator =
+    dashboard.indicators.find(function(item) {
+
+      return String(item.code) ===
+        String(selectedIndicator);
+
+    });
+
+
+  if (!indicator) return;
+
+
+  const pic =
+    indicator.pic2026 ||
+    indicator.PIC2026 ||
+    indicator.pic ||
+    indicator.PIC ||
+    '';
+
+
+  if (pic) {
+
+    const option =
+      document.createElement('option');
+
+    option.value = pic;
+
+    option.textContent = pic;
+
+    picFilter.appendChild(option);
+
+    picFilter.value = pic;
+
+  }
+
+}
+/* =====================================================
+   MENGAMBIL PIC 2026 DARI INDIKATOR
+===================================================== */
+
+function getPIC2026(item) {
+
+  if (
+    !dashboard ||
+    picAccessGranted !== true
+  ) {
+    return '';
+  }
+
+  if (!item) return '';
+
+
+  /*
+   * Beberapa kemungkinan nama field
+   * yang mungkin dikirim dari Apps Script.
+   */
+
+  const possibleFields = [
+
+    'pic2026',
+    'PIC2026',
+    'pic_2026',
+    'PIC_2026',
+    'pic2026Name',
+    'picName2026',
+    'pic'
+
+  ];
+
+
+  for (
+    let i = 0;
+    i < possibleFields.length;
+    i++
+  ) {
+
+    const field =
+      possibleFields[i];
+
+
+    if (
+      item[field] !== undefined &&
+      item[field] !== null
+    ) {
+
+      const value =
+        String(
+          item[field]
+        ).trim();
+
+
+      if (value) {
+        return value;
+      }
+
+    }
+
+  }
+
+
+  return '';
+
+}
+
+/* =====================================================
+   PERBANDINGAN SELURUH PIC
+===================================================== */
+
+function renderPICComparison() {
+
+  if (
+    !dashboard ||
+    !Array.isArray(dashboard.indicators)
+  ) {
+    return;
+  }
+
+
+  const summary =
+    document.getElementById('picSummary');
+
+
+  /* =========================================
+     KELOMPOKKAN INDIKATOR PER PIC
+  ========================================= */
+
+  const groups = {};
+
+
+  dashboard.indicators.forEach(function(item) {
+
+    const pic =
+      getPIC2026(item);
+
+    if (!pic) {
+      return;
+    }
+
+
+    if (!groups[pic]) {
+
+      groups[pic] = {
+        items: [],
+        total: 0
+      };
+
+    }
+
+
+    groups[pic].items.push(item);
+
+  });
+
+
+  const picNames =
+    Object.keys(groups)
+      .sort(function(a, b) {
+
+        return a.localeCompare(
+          b,
+          'id',
+          {
+            sensitivity: 'base'
+          }
+        );
+
+      });
+
+
+  /* =========================================
+     JIKA TIDAK ADA PIC
+  ========================================= */
+
+  if (!picNames.length) {
+
+    summary.innerHTML =
+      '<div class="empty">' +
+      'Data PIC belum tersedia.' +
+      '</div>';
+
+    return;
+  }
+
+
+  /* =========================================
+     HITUNG PEMENUHAN PER PIC
+     -----------------------------------------
+     % kartu = CAKUPAN PERHITUNGAN
+     (indikator ber-coverage valid / total),
+     bukan rata-rata kelengkapan.
+  ========================================= */
+
+  picNames.forEach(function(pic) {
+
+    const items =
+      groups[pic].items;
+
+    let countable = 0;
+
+    items.forEach(function(item) {
+
+      if (getPICFulfillmentPercentage(item) !== null) {
+        countable++;
+      }
+
+    });
+
+    groups[pic].total = items.length;
+    groups[pic].countable = countable;
+
+    groups[pic].percentage =
+      items.length > 0
+        ? (countable / items.length) * 100
+        : 0;
+
+  });
+
+
+  /* =========================================
+     URUTKAN % TERTINGGI
+  ========================================= */
+
+  picNames.sort(function(a, b) {
+
+    return groups[b].percentage - groups[a].percentage;
+
+  });
+
+
+  /* =========================================
+     GRID KARTU PEMENUHAN PER PIC
+  ========================================= */
+
+  const PIC_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5Z" fill="currentColor"/>' +
+    '<path d="M4 20.5c0-3.866 3.582-7 8-7s8 3.134 8 7V21H4v-.5Z" fill="currentColor"/>' +
+    '</svg>';
+
+  let cards = '';
+
+  picNames.forEach(function(pic) {
+
+    const total = groups[pic].total;
+    const percentage = groups[pic].percentage;
+
+    cards += `
+
+      <div
+        class="pic-item"
+        data-pic="${escapeHtml(pic)}"
+        title="Lihat detail ${escapeHtml(pic)}"
+      >
+
+        <div class="pic-item-top">
+
+          <span class="pic-avatar">${PIC_ICON}</span>
+
+          <div class="pic-item-id">
+
+            <div class="pic-item-name">
+              ${escapeHtml(pic)}
+            </div>
+
+            <div class="pic-item-count">
+              ${total} indikator
+            </div>
+
+          </div>
+
+          <div class="pic-item-pct">
+            ${formatPercent(percentage)}
+          </div>
+
+        </div>
+
+        <div class="pic-item-big">
+          ${total}
+        </div>
+
+        <div class="pic-item-track">
+          <div
+            class="pic-item-fill"
+            style="width:${Math.min(percentage, 100)}%;"
+          ></div>
+        </div>
+
+      </div>
+
+    `;
+
+  });
+
+  summary.innerHTML =
+    '<div class="pic-grid">' + cards + '</div>';
+
+
+  /* =========================================
+     KLIK KARTU -> BUKA DETAIL PIC
+  ========================================= */
+
+  summary.querySelectorAll('.pic-item').forEach(
+    function(el) {
+
+      el.addEventListener('click', function() {
+
+        selectPICFromCard(
+          el.getAttribute('data-pic')
+        );
+
+      });
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   PILIH PIC DARI KARTU RINGKASAN
+====================================================== */
+
+function selectPICFromCard(pic) {
+
+  const picFilter =
+    document.getElementById('picFilter');
+
+  if (!picFilter) return;
+
+  picFilter.value = pic;
+
+  updatePICDashboard();
+
+}
+/* =====================================================
+   DASHBOARD PIC
+===================================================== */
+
+function updatePICDashboard() {
+
+  if (
+    !dashboard ||
+    picAccessGranted !== true ||
+    !dashboard.indicators
+  ) {
+    return;
+  }
+
+  const picFilter =
+    document.getElementById('picFilter');
+
+  const selectedPIC =
+    picFilter.value;
+
+  const selectedIndicator =
+    document.getElementById('indicatorFilter').value;
+
+  const summary =
+    document.getElementById('picSummary');
+
+  const detail =
+    document.getElementById('picDetail');
+
+  const body =
+    document.getElementById('picDetailBody');
+
+
+  /* =========================================
+     BELUM PILIH PIC
+  ========================================= */
+
+if (!selectedPIC) {
+
+  renderPICComparison();
+
+  detail.style.display = 'none';
+
+  return;
+}
+
+  /* =========================================
+     FILTER DATA SEKALI SAJA
+  ========================================= */
+
+  const selectedPICNormalized =
+    String(selectedPIC).trim().toLowerCase();
+
+
+  let items =
+    dashboard.indicators.filter(function(item) {
+
+      const pic =
+        getPIC2026(item);
+
+      return (
+        String(pic).trim().toLowerCase() ===
+        selectedPICNormalized
+      );
+
+    });
+
+
+  /* =========================================
+     FILTER INDIKATOR
+  ========================================= */
+
+  if (selectedIndicator) {
+
+    items =
+      items.filter(function(item) {
+
+        return (
+          String(item.code) ===
+          String(selectedIndicator)
+        );
+
+      });
+
+  }
+
+
+  /* =========================================
+     TIDAK ADA DATA
+  ========================================= */
+
+  if (!items.length) {
+
+    summary.innerHTML =
+      '<div class="empty">' +
+      'Tidak ada data pemenuhan untuk PIC yang dipilih.' +
+      '</div>';
+
+    detail.style.display = 'none';
+
+    return;
+  }
+
+
+  /* =========================================
+     HITUNG PEMENUHAN PER PIC
+     -----------------------------------------
+     total      = semua indikator PIC ini
+     countable  = indikator dengan coverage valid
+     sudah      = indikator terhitung sudah 100%
+     cakupan    = countable / total (persen)
+  ========================================= */
+
+  let sudah = 0;
+  let countable = 0;
+
+  items.forEach(function(item) {
+
+    const safePercentage =
+      getPICFulfillmentPercentage(item);
+
+
+    item._picPercentage =
+      safePercentage;
+
+
+    if (safePercentage !== null) {
+      countable++;
+    }
+
+
+    if (safePercentage !== null && safePercentage >= 100) {
+      sudah++;
+    }
+
+  });
+
+
+  const total =
+    items.length;
+
+
+  const cakupanPersen =
+    total > 0
+      ? (countable / total) * 100
+      : 0;
+
+
+  /* =========================================
+     SUMMARY (4 KPI)
+  ========================================= */
+
+  let summaryHTML = `
+
+    <div class="pic-summary">
+
+      <div class="pic-summary-item">
+
+        <div class="pic-summary-label">
+          PIC 2026
+        </div>
+
+        <div class="pic-summary-value">
+          ${escapeHtml(selectedPIC)}
+        </div>
+
+        <div class="pic-summary-subvalue">
+          Penanggung jawab indikator
+        </div>
+
+      </div>
+
+
+      <div class="pic-summary-item">
+
+        <div class="pic-summary-label">
+          Cakupan Perhitungan
+        </div>
+
+        <div class="pic-summary-value">
+          ${countable} / ${total}
+        </div>
+
+        <div class="pic-summary-subvalue">
+          indikator masuk perhitungan
+        </div>
+
+      </div>
+
+
+      <div class="pic-summary-item">
+
+        <div class="pic-summary-label">
+          Indikator Terselesaikan
+        </div>
+
+        <div class="pic-summary-value">
+          ${sudah}
+        </div>
+
+        <div class="pic-summary-subvalue">
+          indikator mencapai 100%
+        </div>
+
+      </div>
+
+
+      <div class="pic-summary-item">
+
+        <div class="pic-summary-label">
+          Persentase Progress
+        </div>
+
+        <div class="pic-summary-value">
+          ${formatPercent(cakupanPersen)}
+        </div>
+
+        <div class="pic-summary-subvalue">
+          cakupan indikator masuk hitungan
+        </div>
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  /*
+   * Progress besar hanya muncul
+   * jika SEMUA indikator sedang ditampilkan.
+   */
+
+  if (!selectedIndicator) {
+
+    summaryHTML += `
+
+      <div class="pic-progress-summary">
+
+        <div class="pic-progress-summary-label">
+
+          <span>
+            Cakupan Perhitungan (progress)
+          </span>
+
+          <strong>
+            ${formatPercent(cakupanPersen)}
+          </strong>
+
+        </div>
+
+
+        <div class="pic-progress-summary-track">
+
+          <div
+            class="pic-progress-summary-fill"
+            style="
+              width:${Math.min(cakupanPersen, 100)}%;
+            "
+          ></div>
+
+        </div>
+
+
+        <div class="pic-progress-summary-meta">
+
+          ${countable} dari ${total} indikator memiliki Coverage Terkecil yang valid dan masuk perhitungan (${formatPercent(cakupanPersen)}). ${sudah} dari ${countable} indikator terhitung telah terpenuhi 100%.
+
+        </div>
+
+      </div>
+
+    `;
+
+  }
+
+
+  summary.innerHTML =
+    summaryHTML;
+
+
+  /* =========================================
+     DETAIL
+  ========================================= */
+
+  detail.style.display =
+    'block';
+
+
+  document.getElementById(
+    'picDetailTitle'
+  ).textContent =
+    'Detail Pemenuhan — ' +
+    selectedPIC;
+
+
+  document.getElementById(
+    'picDetailSubtitle'
+  ).textContent =
+    items.length +
+    ' indikator menjadi tanggung jawab PIC ini';
+
+
+  /* =========================================
+     BUILD HTML SEKALI
+     Jangan appendChild per baris.
+  ========================================= */
+
+  let rows = '';
+
+
+  items.forEach(function(item) {
+
+    const percentage =
+      item._picPercentage;
+
+    const catatanPemeriksaan =
+      item.catatanPemeriksaan || '-';
+
+    const tindakLanjut =
+      item.tindakLanjut || '-';
+
+    const catatanJanuari =
+      item.catatanJanuari || '-';
+
+    const catatan =
+      item.catatan || '-';
+
+
+    rows += `
+
+      <tr>
+
+        <td class="code">
+          ${escapeHtml(
+            item.code || '-'
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            item.name || '-'
+          )}
+        </td>
+
+        <td>
+          ${percentage === null
+            ? '<span style="color:#999;font-size:11px;">Tidak dihitung</span>'
+            : `
+              <div class="pic-progress">
+                <div
+                  class="pic-progress-bar"
+                  style="width:${percentage}%;"
+                ></div>
+              </div>
+              <span class="pic-percentage">
+                ${formatPercent(percentage)}
+              </span>
+            `
+          }
+        </td>
+
+        <td>
+          ${escapeHtml(
+            catatanPemeriksaan
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            tindakLanjut
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            catatanJanuari
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            catatan
+          )}
+        </td>
+
+      </tr>
+
+    `;
+
+  });
+
+
+  body.innerHTML =
+    rows;
+
+}
+
+/* =====================================================
+   REKAP SEMUA PIC
+===================================================== */
+
+function renderPICSummary(
+  picIndicators
+) {
+
+  const summary =
+    document.getElementById(
+      'picSummary'
+    );
+
+
+  const grouped = {};
+
+
+  /*
+   * Kelompokkan indikator berdasarkan PIC
+   */
+
+  picIndicators.forEach(
+    function(item) {
+
+      const pic =
+        item.pic;
+
+
+      if (!grouped[pic]) {
+
+        grouped[pic] = [];
+
+      }
+
+
+      grouped[pic].push(
+        item.indicator
+      );
+
+    }
+  );
+
+
+  const picNames =
+    Object.keys(grouped)
+      .sort(
+        function(a, b) {
+
+          return a.localeCompare(
+            b,
+            'id'
+          );
+
+        }
+      );
+
+
+  /*
+   * Hitung total indikator
+   */
+
+  let totalIndicators = 0;
+
+  let totalPercentage = 0;
+
+  let totalCountablePIC = 0;
+
+
+  picNames.forEach(
+    function(pic) {
+
+      const indicators =
+        grouped[pic];
+
+
+      totalIndicators +=
+        indicators.length;
+
+
+      const average =
+        calculatePICPercentage(
+          indicators
+        );
+
+
+      if (average !== null) {
+        totalPercentage += average;
+        totalCountablePIC++;
+      }
+
+    }
+  );
+
+
+  const overall =
+    totalCountablePIC > 0
+      ? totalPercentage /
+        totalCountablePIC
+      : null;
+
+
+  /*
+   * Summary cards
+   */
+
+  let html = '';
+
+
+  html +=
+
+    '<div class="pic-summary">' +
+
+      '<div class="pic-summary-item">' +
+
+        '<div class="pic-summary-label">' +
+
+          'Total PIC 2026' +
+
+        '</div>' +
+
+        '<div class="pic-summary-value">' +
+
+          picNames.length +
+
+        '</div>' +
+
+      '</div>' +
+
+
+      '<div class="pic-summary-item">' +
+
+        '<div class="pic-summary-label">' +
+
+          'Total Indikator' +
+
+        '</div>' +
+
+        '<div class="pic-summary-value">' +
+
+          totalIndicators +
+
+        '</div>' +
+
+      '</div>' +
+
+
+      '<div class="pic-summary-item">' +
+
+        '<div class="pic-summary-label">' +
+
+          'Rata-rata Pemenuhan' +
+
+        '</div>' +
+
+        '<div class="pic-summary-value">' +
+
+          (overall === null
+            ? 'Tidak dihitung'
+            : formatPercent(overall)) +
+
+        '</div>' +
+
+      '</div>' +
+
+    '</div>';
+
+
+  /*
+   * Tabel PIC
+   */
+
+  html +=
+
+    '<div class="pic-table-wrap">' +
+
+      '<table class="pic-table">' +
+
+        '<thead>' +
+
+          '<tr>' +
+
+            '<th>PIC 2026</th>' +
+
+            '<th>Jumlah Indikator</th>' +
+
+            '<th>Pemenuhan</th>' +
+
+          '</tr>' +
+
+        '</thead>' +
+
+        '<tbody>';
+
+
+  picNames.forEach(
+    function(pic) {
+
+      const indicators =
+        grouped[pic];
+
+
+      const percentage =
+        calculatePICPercentage(
+          indicators
+        );
+
+
+      html +=
+
+        '<tr>' +
+
+          '<td class="pic-name">' +
+
+            escapeHtml(pic) +
+
+          '</td>' +
+
+
+          '<td>' +
+
+            indicators.length +
+
+          '</td>' +
+
+
+          '<td>' +
+
+            '<span class="pic-progress">' +
+
+              '<span class="pic-progress-bar" ' +
+
+                'style="width:' +
+
+                (percentage === null
+                  ? 0
+                  : Math.min(
+                      percentage,
+                      100
+                    )) +
+
+                '%">' +
+
+              '</span>' +
+
+            '</span>' +
+
+            '<span class="pic-percentage">' +
+
+              (percentage === null
+                ? 'Tidak dihitung'
+                : formatPercent(
+                    percentage
+                  )) +
+
+            '</span>' +
+
+          '</td>' +
+
+        '</tr>';
+
+    }
+  );
+
+
+  html +=
+
+        '</tbody>' +
+
+      '</table>' +
+
+    '</div>';
+
+
+  summary.innerHTML =
+    html;
+
+}
+
+
+/* =====================================================
+   DETAIL SATU PIC
+===================================================== */
+
+function renderPICDetail(
+  pic,
+  picIndicators
+) {
+
+  const summary =
+    document.getElementById(
+      'picSummary'
+    );
+
+  const detail =
+    document.getElementById(
+      'picDetail'
+    );
+
+  const title =
+    document.getElementById(
+      'picDetailTitle'
+    );
+
+  const subtitle =
+    document.getElementById(
+      'picDetailSubtitle'
+    );
+
+  const body =
+    document.getElementById(
+      'picDetailBody'
+    );
+
+
+  const indicators =
+    picIndicators
+      .filter(
+        function(item) {
+
+          return item.pic === pic;
+
+        }
+      )
+      .map(
+        function(item) {
+
+          return item.indicator;
+
+        }
+      );
+
+
+  summary.innerHTML =
+    '';
+
+
+  detail.style.display =
+    'block';
+
+
+  title.textContent =
+    'Detail Pemenuhan — ' +
+    pic;
+
+
+  subtitle.textContent =
+    indicators.length +
+    ' indikator menjadi tanggung jawab PIC ini';
+
+
+  body.innerHTML =
+    '';
+
+
+  if (!indicators.length) {
+
+    body.innerHTML =
+
+      '<tr>' +
+
+        '<td colspan="3" class="empty">' +
+
+          'Tidak ada indikator.' +
+
+        '</td>' +
+
+      '</tr>';
+
+    return;
+
+  }
+
+
+  indicators.forEach(
+    function(item) {
+
+      const percentage =
+        calculateIndicatorPercentage(
+          item
+        );
+
+
+      const tr =
+        document.createElement(
+          'tr'
+        );
+
+
+      tr.innerHTML =
+
+        '<td class="code">' +
+          escapeHtml(item.code) +
+        '</td>' +
+
+        '<td>' +
+          escapeHtml(item.name) +
+        '</td>' +
+
+        '<td>' +
+          (percentage === null
+            ? '<span style="color:#999;">Tidak dihitung</span>'
+            : '<span class="pic-progress">' +
+                '<span class="pic-progress-bar" style="width:' +
+                  Math.min(percentage, 100) +
+                '%"></span>' +
+              '</span>' +
+              '<span class="pic-percentage">' +
+                formatPercent(percentage) +
+              '</span>') +
+        '</td>';
+
+
+      body.appendChild(
+        tr
+      );
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   HITUNG PEMENUHAN PIC
+===================================================== */
+
+function calculatePICPercentage(
+  indicators
+) {
+
+  if (
+    !indicators ||
+    !indicators.length
+  ) {
+
+    return null;
+
+  }
+
+
+  const values =
+    indicators
+      .map(function(item) {
+        return getPICFulfillmentPercentage(item);
+      })
+      .filter(function(value) {
+        return value !== null;
+      });
+
+
+  if (!values.length) {
+    return null;
+  }
+
+
+  const total =
+    values.reduce(
+      function(sum, value) {
+        return sum + value;
+      },
+      0
+    );
+
+
+  return total / values.length;
+
+}
+
+
+/* =====================================================
+   PERSENTASE INDIKATOR
+   -----------------------------------------------------
+   NULL = coverage kosong / indikator tidak dihitung.
+===================================================== */
+
+function getGeneralDataPercentage(item) {
+
+  if (
+    !item ||
+    item.dataPercentage === undefined ||
+    item.dataPercentage === null ||
+    item.dataPercentage === ''
+  ) {
+    return null;
+  }
+
+  const value =
+    Number(item.dataPercentage);
+
+  if (isNaN(value)) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, value)
+  );
+
+}
+
+
+/* =====================================================
+   PERSENTASE PEMENUHAN PIC
+   -----------------------------------------------------
+   Berbeda dengan "Data Terisi" umum.
+   Mengikuti aturan Coverage Terkecil dari backend.
+===================================================== */
+
+function getPICFulfillmentPercentage(item) {
+
+  if (
+    !item ||
+    !item.fulfillment ||
+    item.fulfillment.countable === false ||
+    item.fulfillment.percentage === undefined ||
+    item.fulfillment.percentage === null ||
+    item.fulfillment.percentage === ''
+  ) {
+    return null;
+  }
+
+  const value =
+    Number(item.fulfillment.percentage);
+
+  if (isNaN(value)) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, value)
+  );
+
+}
+
+
+function calculateIndicatorPercentage(
+  item
+) {
+
+  return getPICFulfillmentPercentage(item);
+
+}
+
+
+/* =====================================================
+   REGION DROPDOWN
+===================================================== */
+
+function initializeRegionDropdown() {
+
+  const button =
+    document.getElementById(
+      'regionButton'
+    );
+
+  const menu =
+    document.getElementById(
+      'regionMenu'
+    );
+
+
+  button.addEventListener(
+    'click',
+    function(event) {
+
+      event.stopPropagation();
+
+      menu.classList.toggle(
+        'show'
+      );
+
+    }
+  );
+
+
+  document.addEventListener(
+    'click',
+    function(event) {
+
+      if (
+        !event.target.closest(
+          '.region-dropdown'
+        )
+      ) {
+
+        menu.classList.remove(
+          'show'
+        );
+
+      }
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   REGION CHECKBOX
+===================================================== */
+
+function buildRegionCheckboxes() {
+
+  const container =
+    document.getElementById(
+      'regionOptions'
+    );
+
+
+  container.innerHTML =
+    '';
+
+
+  const uniqueRegions = [];
+
+  const seen = new Set();
+
+
+  uniqueRegions.push(
+    PROVINCE_NAME
+  );
+
+  seen.add(
+    normalizeRegion(
+      PROVINCE_NAME
+    )
+  );
+
+
+  (
+    dashboard.wilayah ||
+    []
+  ).forEach(
+    function(region) {
+
+      if (!region) return;
+
+
+      const clean =
+        String(region).trim();
+
+
+      if (!clean) return;
+
+
+      const normalized =
+        normalizeRegion(
+          clean
+        );
+
+
+      if (
+        normalized ===
+        normalizeRegion(
+          PROVINCE_NAME
+        )
+      ) {
+
+        return;
+
+      }
+
+
+      if (
+        !seen.has(
+          normalized
+        )
+      ) {
+
+        seen.add(
+          normalized
+        );
+
+        uniqueRegions.push(
+          clean
+        );
+
+      }
+
+    }
+  );
+
+
+  uniqueRegions.forEach(
+    function(region, index) {
+
+      if (index === 1) {
+
+        const divider =
+          document.createElement(
+            'div'
+          );
+
+        divider.className =
+          'region-divider';
+
+        container.appendChild(
+          divider
+        );
+
+      }
+
+
+      const label =
+        document.createElement(
+          'label'
+        );
+
+      label.className =
+        'region-option';
+
+
+      const checkbox =
+        document.createElement(
+          'input'
+        );
+
+      checkbox.type =
+        'checkbox';
+
+      checkbox.value =
+        region;
+
+      checkbox.dataset.region =
+        region;
+
+
+      if (
+        normalizeRegion(
+          region
+        ) ===
+        normalizeRegion(
+          PROVINCE_NAME
+        )
+      ) {
+
+        checkbox.classList.add(
+          'province-checkbox'
+        );
+
+      }
+
+
+      const text =
+        document.createElement(
+          'span'
+        );
+
+
+      if (
+        normalizeRegion(
+          region
+        ) ===
+        normalizeRegion(
+          PROVINCE_NAME
+        )
+      ) {
+
+        text.innerHTML =
+          '<strong>' +
+          escapeHtml(region) +
+          '</strong>';
+
+      } else {
+
+        text.textContent =
+          region;
+
+      }
+
+
+      label.appendChild(
+        checkbox
+      );
+
+      label.appendChild(
+        text
+      );
+
+      container.appendChild(
+        label
+      );
+
+
+      checkbox.addEventListener(
+        'change',
+        function() {
+
+          handleRegionChange(
+            region,
+            checkbox.checked
+          );
+
+        }
+      );
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   REGION CHANGE
+===================================================== */
+
+function handleRegionChange(
+  region,
+  checked
+) {
+
+  const normalized =
+    normalizeRegion(
+      region
+    );
+
+
+  if (
+    normalized ===
+    normalizeRegion(
+      PROVINCE_NAME
+    )
+  ) {
+
+    if (checked) {
+
+      selectedRegions =
+        [PROVINCE_NAME];
+
+
+      document
+        .querySelectorAll(
+          '#regionOptions input[type="checkbox"]'
+        )
+        .forEach(
+          function(cb) {
+
+            if (
+              !cb.classList.contains(
+                'province-checkbox'
+              )
+            ) {
+
+              cb.checked =
+                false;
+
+            }
+
+          }
+        );
+
+    } else {
+
+      selectedRegions =
+        [];
+
+    }
+
+  } else {
+
+    const provinceCheckbox =
+      document.querySelector(
+        '.province-checkbox'
+      );
+
+
+    if (provinceCheckbox) {
+
+      provinceCheckbox.checked =
+        false;
+
+    }
+
+
+    if (checked) {
+
+      if (
+        !selectedRegions.some(
+          function(item) {
+
+            return (
+              normalizeRegion(item) ===
+              normalized
+            );
+
+          }
+        )
+      ) {
+
+        selectedRegions.push(
+          region
+        );
+
+      }
+
+    } else {
+
+      selectedRegions =
+        selectedRegions.filter(
+          function(item) {
+
+            return (
+              normalizeRegion(item) !==
+              normalized
+            );
+
+          }
+        );
+
+    }
+
+  }
+
+
+  updateRegionButton();
+
+  updateDashboard();
+
+}
+
+
+/* =====================================================
+   REGION SELECT
+===================================================== */
+
+function selectAllRegions() {
+
+  selectedRegions = [];
+
+
+  document
+    .querySelectorAll(
+      '#regionOptions input[type="checkbox"]'
+    )
+    .forEach(
+      function(cb) {
+
+        cb.checked =
+          false;
+
+      }
+    );
+
+
+  updateRegionButton();
+
+  updateDashboard();
+
+}
+
+
+function clearAllRegions() {
+
+  selectedRegions = [];
+
+
+  document
+    .querySelectorAll(
+      '#regionOptions input[type="checkbox"]'
+    )
+    .forEach(
+      function(cb) {
+
+        cb.checked =
+          false;
+
+      }
+    );
+
+
+  updateRegionButton();
+
+  updateDashboard();
+
+}
+
+
+/* =====================================================
+   REGION BUTTON
+===================================================== */
+
+function updateRegionButton() {
+
+  const button =
+    document.getElementById(
+      'regionButton'
+    );
+
+
+  if (
+    selectedRegions.length === 0
+  ) {
+
+    button.textContent =
+      'Semua wilayah';
+
+    return;
+
+  }
+
+
+  if (
+    selectedRegions.some(
+      function(region) {
+
+        return (
+          normalizeRegion(region) ===
+          normalizeRegion(
+            PROVINCE_NAME
+          )
+        );
+
+      }
+    )
+  ) {
+
+    button.textContent =
+      PROVINCE_NAME;
+
+    return;
+
+  }
+
+
+  if (
+    selectedRegions.length === 1
+  ) {
+
+    button.textContent =
+      selectedRegions[0];
+
+    return;
+
+  }
+
+
+  button.textContent =
+    selectedRegions.length +
+    ' wilayah dipilih';
+
+}
+
+
+/* =====================================================
+   UPDATE DASHBOARD
+===================================================== */
+
+function updateDashboard() {
+
+  if (!dashboard) return;
+
+
+  const indicator =
+    document.getElementById(
+      'indicatorFilter'
+    ).value;
+
+
+  const start =
+    Number(
+      document.getElementById(
+        'startYear'
+      ).value
+    ) || null;
+
+
+  const end =
+    Number(
+      document.getElementById(
+        'endYear'
+      ).value
+    ) || null;
+
+
+  let selectedIndicators =
+    dashboard.indicators;
+
+
+  if (indicator) {
+
+    selectedIndicators =
+      dashboard.indicators.filter(
+        function(item) {
+
+          return (
+            item.code ===
+            indicator
+          );
+
+        }
+      );
+
+  }
+
+
+  updateKPI(
+    selectedIndicators,
+    start,
+    end
+  );
+
+
+  renderIndicatorTable(
+    selectedIndicators
+  );
+
+
+  if (indicator) {
+
+    const item =
+      selectedIndicators[0];
+
+
+    if (item) {
+
+      loadIndicatorData(
+        item,
+        start,
+        end
+      );
+
+    }
+
+  } else {
+
+    clearChart();
+
+    clearMap();
+
+  }
+
+}
+
+
+/* =====================================================
+   KPI
+===================================================== */
+
+function updateKPI(
+  indicators,
+  start,
+  end
+) {
+
+  document.getElementById(
+    'kpiIndicator'
+  ).textContent =
+    indicators.length;
+
+
+  if (
+    indicators.length === 0
+  ) {
+
+    document.getElementById(
+      'kpiFilled'
+    ).textContent =
+      '-';
+
+  } else {
+
+    const percentages =
+      indicators
+        .map(function(item) {
+          return getGeneralDataPercentage(item);
+        })
+        .filter(function(value) {
+          return value !== null;
+        });
+
+
+    const avg =
+      percentages.length
+        ? percentages.reduce(
+            function(a, b) {
+              return a + b;
+            },
+            0
+          ) / percentages.length
+        : null;
+
+
+    document.getElementById(
+      'kpiFilled'
+    ).textContent =
+      avg === null
+        ? '-'
+        : formatPercent(avg);
+
+  }
+
+
+  let latest =
+    dashboard.years[
+      dashboard.years.length - 1
+    ];
+
+
+  if (end) {
+
+    latest =
+      end;
+
+  }
+
+
+  document.getElementById(
+    'kpiYear'
+  ).textContent =
+    latest || '-';
+
+
+  if (
+    selectedRegions.length === 0
+  ) {
+
+    document.getElementById(
+      'kpiRegion'
+    ).textContent =
+      'Semua';
+
+  } else if (
+    selectedRegions.length === 1
+  ) {
+
+    document.getElementById(
+      'kpiRegion'
+    ).textContent =
+      selectedRegions[0];
+
+  } else {
+
+    document.getElementById(
+      'kpiRegion'
+    ).textContent =
+      selectedRegions.length +
+      ' wilayah';
+
+  }
+
+}
+
+
+/* =====================================================
+   INDICATOR TABLE
+===================================================== */
+
+function renderIndicatorTable(
+  indicators
+) {
+
+  const tbody =
+    document.getElementById(
+      'indicatorTable'
+    );
+
+
+  tbody.innerHTML =
+    '';
+
+
+  if (
+    indicators.length === 0
+  ) {
+
+    tbody.innerHTML =
+
+      '<tr>' +
+
+        '<td colspan="5" class="empty">' +
+
+          'Tidak ada indikator.' +
+
+        '</td>' +
+
+      '</tr>';
+
+    return;
+
+  }
+
+
+  indicators.forEach(
+    function(item) {
+
+      const tr =
+        document.createElement(
+          'tr'
+        );
+
+
+      const percentage =
+        getGeneralDataPercentage(item);
+
+
+      tr.innerHTML =
+
+        '<td class="code">' +
+
+          escapeHtml(
+            item.code
+          ) +
+
+        '</td>' +
+
+
+        '<td>' +
+
+          escapeHtml(
+            item.name
+          ) +
+
+        '</td>' +
+
+
+        '<td style="min-width:320px;max-width:550px;line-height:1.55;">' +
+
+          escapeHtml(
+            item.definition ||
+            ''
+          ) +
+
+        '</td>' +
+
+
+        '<td>' +
+
+          (percentage === null
+
+            ? '<span style="color:#999;">Tidak dihitung</span>'
+
+            : '<div class="progress">' +
+
+                '<div ' +
+
+                  'class="progress-bar" ' +
+
+                  'style="width:' +
+
+                  Math.min(
+                    percentage,
+                    100
+                  ) +
+
+                  '%">' +
+
+                '</div>' +
+
+              '</div>' +
+
+              formatPercent(
+                percentage
+              )
+
+          ) +
+
+        '</td>' +
+
+
+        '<td>' +
+
+          '<button ' +
+
+            'class="btn" ' +
+
+            'onclick="showDetail(' +
+
+            item.row +
+
+            ')"' +
+
+          '>' +
+
+            'Lihat Detail' +
+
+          '</button>' +
+
+        '</td>';
+
+
+      tbody.appendChild(
+        tr
+      );
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   LOAD INDICATOR
+===================================================== */
+
+function loadIndicatorData(
+  indicator,
+  start,
+  end
+) {
+
+  if (
+    indicatorDataCache[
+      indicator.row
+    ]
+  ) {
+
+    renderVisuals(
+      indicator,
+      indicatorDataCache[
+        indicator.row
+      ],
+      start,
+      end
+    );
+
+    return;
+
+  }
+
+
+  google.script.run
+
+    .withSuccessHandler(
+      function(data) {
+
+        indicatorDataCache[
+          indicator.row
+        ] =
+          data;
+
+
+        renderVisuals(
+          indicator,
+          data,
+          start,
+          end
+        );
+
+      }
+    )
+
+    .withFailureHandler(
+      function(error) {
+
+        console.error(error);
+
+      }
+    )
+
+    .getIndicatorValues(
+      indicator.row
+    );
+
+}
+
+
+/* =====================================================
+   FILTER DATA
+===================================================== */
+
+function filterData(
+  data,
+  start,
+  end
+) {
+
+  return data.filter(
+    function(item) {
+
+
+      if (
+        selectedRegions.length > 0
+      ) {
+
+        const provinceSelected =
+          selectedRegions.some(
+            function(region) {
+
+              return (
+                normalizeRegion(region) ===
+                normalizeRegion(
+                  PROVINCE_NAME
+                )
+              );
+
+            }
+          );
+
+
+        if (!provinceSelected) {
+
+          const match =
+            selectedRegions.some(
+              function(region) {
+
+                return (
+                  normalizeRegion(region) ===
+                  normalizeRegion(
+                    item.wilayah
+                  )
+                );
+
+              }
+            );
+
+
+          if (!match) {
+
+            return false;
+
+          }
+
+        }
+
+      }
+
+
+      if (
+        start &&
+        Number(item.tahun) < start
+      ) {
+
+        return false;
+
+      }
+
+
+      if (
+        end &&
+        Number(item.tahun) > end
+      ) {
+
+        return false;
+
+      }
+
+
+      return true;
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   VISUAL
+===================================================== */
+
+function renderVisuals(
+  indicator,
+  data,
+  start,
+  end
+) {
+
+  const filtered =
+    filterData(
+      data,
+      start,
+      end
+    );
+
+
+  drawChart(
+    filtered
+  );
+
+
+  updateMap(
+    filtered
+  );
+
+}
+
+
+/* =====================================================
+   CHART
+===================================================== */
+
+function drawChart(data) {
+
+  const chartElement =
+    document.getElementById(
+      'chart'
+    );
+
+
+  if (!data.length) {
+
+    chartElement.innerHTML =
+      '<div class="empty">' +
+
+      'Tidak ada data pada filter yang dipilih.' +
+
+      '</div>';
+
+
+    document.getElementById(
+      'chartLegend'
+    ).innerHTML =
+      '';
+
+
+    return;
+
+  }
+
+
+  const grouped = {};
+
+
+  data.forEach(
+    function(item) {
+
+      if (
+        !grouped[item.tahun]
+      ) {
+
+        grouped[item.tahun] =
+          {};
+
+      }
+
+
+      grouped[item.tahun][
+        item.wilayah
+      ] =
+        parseNumber(
+          item.nilai
+        );
+
+    }
+  );
+
+
+  const regions =
+    [
+      ...new Set(
+        data.map(
+          function(item) {
+
+            return item.wilayah;
+
+          }
+        )
+      )
+    ];
+
+
+  const provinceIndex =
+    regions.findIndex(
+      function(region) {
+
+        return (
+          normalizeRegion(region) ===
+          normalizeRegion(
+            PROVINCE_NAME
+          )
+        );
+
+      }
+    );
+
+
+  if (provinceIndex > 0) {
+
+    const province =
+      regions.splice(
+        provinceIndex,
+        1
+      )[0];
+
+
+    regions.unshift(
+      province
+    );
+
+  }
+
+
+  const legendColors =
+    regions.map(
+      function(region, index) {
+
+        return getLegendColor(
+          index
+        );
+
+      }
+    );
+
+
+  const years =
+    [
+      ...new Set(
+        data.map(
+          function(item) {
+
+            return Number(
+              item.tahun
+            );
+
+          }
+        )
+      )
+    ].sort(
+      function(a, b) {
+
+        return a - b;
+
+      }
+    );
+
+
+  const rows =
+    [
+      [
+        'Tahun',
+        ...regions
+      ]
+    ];
+
+
+  years.forEach(
+    function(year) {
+
+      const row =
+        [year];
+
+
+      regions.forEach(
+        function(region) {
+
+          row.push(
+
+            grouped[year] &&
+            grouped[year][region] !==
+            undefined
+
+              ? grouped[year][region]
+
+              : null
+
+          );
+
+        }
+      );
+
+
+      rows.push(
+        row
+      );
+
+    }
+  );
+
+
+  const dataTable =
+    google.visualization
+      .arrayToDataTable(
+        rows
+      );
+
+
+  const yearFormatter =
+    new google.visualization
+      .NumberFormat({
+        pattern: '0'
+      });
+
+
+  yearFormatter.format(
+    dataTable,
+    0
+  );
+
+
+  const chart =
+    new google.visualization
+      .LineChart(
+        chartElement
+      );
+
+
+  chart.draw(
+    dataTable,
+    {
+
+      height: 480,
+
+      chartArea: {
+        left: 70,
+        top: 25,
+        width: '80%',
+        height: '85%'
+      },
+
+      colors:
+        legendColors,
+
+      legend:
+        'none',
+
+      pointSize:
+        4,
+
+      lineWidth:
+        2,
+
+      curveType:
+        'function',
+
+      hAxis: {
+
+        title:
+          'Tahun',
+
+        format:
+          '####',
+
+        viewWindow: {
+
+          min:
+            years[0] - 0.4,
+
+          max:
+            years[
+              years.length - 1
+            ] + 0.4
+
+        }
+
+      },
+
+      vAxis: {
+
+        title:
+          'Nilai',
+
+        format:
+          'short'
+
+      },
+
+      backgroundColor:
+        'transparent',
+
+      tooltip: {
+        isHtml:
+          true
+      }
+
+    }
+  );
+
+
+  const legendContainer =
+    document.getElementById(
+      'chartLegend'
+    );
+
+
+  legendContainer.innerHTML =
+    '';
+
+
+  regions.forEach(
+    function(region, index) {
+
+      const item =
+        document.createElement(
+          'div'
+        );
+
+
+      item.className =
+        'map-item';
+
+
+      item.innerHTML =
+
+        '<span class="map-dot" ' +
+
+          'style="background:' +
+
+          legendColors[index] +
+
+          '">' +
+
+        '</span>' +
+
+        '<span>' +
+
+          '<strong>' +
+
+            escapeHtml(
+              region
+            ) +
+
+          '</strong>' +
+
+        '</span>';
+
+
+      legendContainer.appendChild(
+        item
+      );
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   MAP
+===================================================== */
+
+function initializeMap() {
+
+  map =
+    L.map(
+      'map',
+      {
+        zoomControl:
+          true
+      }
+    );
+
+
+  L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+
+      maxZoom:
+        18,
+
+      attribution:
+        '&copy; OpenStreetMap'
+
+    }
+  ).addTo(
+    map
+  );
+
+
+  const geoUrl =
+
+    'https://geoservices.big.go.id/gis/rest/services/DISIGT/BatasWilayah/FeatureServer/0/query' +
+
+    '?where=' +
+
+    encodeURIComponent(
+      "wadmpr = 'Kalimantan Selatan'"
+    ) +
+
+    '&outFields=*' +
+
+    '&returnGeometry=true' +
+
+    '&outSR=4326' +
+
+    '&f=geojson';
+
+
+  fetch(
+    geoUrl
+  )
+
+    .then(
+      function(response) {
+
+        if (
+          !response.ok
+        ) {
+
+          throw new Error(
+            'GeoJSON gagal dimuat. Status HTTP: ' +
+            response.status
+          );
+
+        }
+
+
+        return response.json();
+
+      }
+    )
+
+    .then(
+      function(json) {
+
+        if (
+          !json ||
+          !json.features ||
+          !json.features.length
+        ) {
+
+          throw new Error(
+            'GeoJSON berhasil diakses tetapi tidak memiliki data wilayah Kalimantan Selatan.'
+          );
+
+        }
+
+
+        geoData =
+          json;
+
+
+        updateMap();
+
+      }
+    )
+
+    .catch(
+      function(error) {
+
+        console.error(
+          'Peta:',
+          error
+        );
+
+
+        document.getElementById(
+          'map'
+        ).innerHTML =
+
+          '<div class="empty">' +
+
+          'Peta wilayah belum dapat dimuat.<br>' +
+
+          '<small>' +
+
+          escapeHtml(
+            error.message
+          ) +
+
+          '</small>' +
+
+          '</div>';
+
+      }
+    );
+
+
+  setTimeout(
+    function() {
+
+      if (map) {
+
+        map.invalidateSize();
+
+      }
+
+    },
+    700
+  );
+
+}
+
+
+/* =====================================================
+   UPDATE MAP
+===================================================== */
+
+function updateMap(
+  data
+) {
+
+  if (
+    !map ||
+    !geoData
+  ) {
+
+    return;
+
+  }
+
+
+  const indicatorCode =
+    document.getElementById(
+      'indicatorFilter'
+    ).value;
+
+
+  const isIKG =
+    normalizeRegion(
+      indicatorCode
+    ) ===
+    '40';
+
+
+  if (geoJsonLayer) {
+
+    map.removeLayer(
+      geoJsonLayer
+    );
+
+  }
+
+
+  data =
+    data || [];
+
+
+  let latestYear =
+    null;
+
+
+  if (data.length) {
+
+    latestYear =
+      Math.max.apply(
+        null,
+        data.map(
+          function(item) {
+
+            return Number(
+              item.tahun
+            );
+
+          }
+        )
+      );
+
+  }
+
+
+  document.getElementById(
+    'mapYear'
+  ).textContent =
+    latestYear || '-';
+
+
+  const latestData =
+    data.filter(
+      function(item) {
+
+        return (
+          Number(item.tahun) ===
+          latestYear
+        );
+
+      }
+    );
+
+
+  const valueMap = {};
+
+
+  latestData.forEach(
+    function(item) {
+
+      valueMap[
+        normalizeRegion(
+          item.wilayah
+        )
+      ] =
+        parseNumber(
+          item.nilai
+        );
+
+    }
+  );
+
+
+  const provinceSelected =
+    selectedRegions.some(
+      function(region) {
+
+        return (
+          normalizeRegion(region) ===
+          normalizeRegion(
+            PROVINCE_NAME
+          )
+        );
+
+      }
+    );
+
+
+  const displayAll =
+    selectedRegions.length === 0 ||
+    provinceSelected;
+
+
+  const values =
+    latestData
+
+      .map(
+        function(item) {
+
+          return parseNumber(
+            item.nilai
+          );
+
+        }
+      )
+
+      .filter(
+        function(v) {
+
+          return !isNaN(v);
+
+        }
+      );
+
+
+  const min =
+    values.length
+      ? Math.min.apply(
+          null,
+          values
+        )
+      : 0;
+
+
+  const max =
+    values.length
+      ? Math.max.apply(
+          null,
+          values
+        )
+      : 1;
+
+
+  geoJsonLayer =
+    L.geoJSON(
+      geoData,
+      {
+
+        style:
+          function(feature) {
+
+            const name =
+              getFeatureRegionName(
+                feature
+              );
+
+
+            const normalized =
+              normalizeRegion(
+                name
+              );
+
+
+            const value =
+              valueMap[
+                normalized
+              ];
+
+
+            let isSelected =
+              false;
+
+
+            if (displayAll) {
+
+              isSelected =
+                true;
+
+            } else {
+
+              isSelected =
+                selectedRegions.some(
+                  function(region) {
+
+                    return (
+                      normalizeRegion(
+                        region
+                      ) ===
+                      normalized
+                    );
+
+                  }
+                );
+
+            }
+
+
+            return {
+
+              fillColor:
+
+                isSelected
+
+                  ? getValueColor(
+                      value,
+                      min,
+                      max,
+                      isIKG
+                    )
+
+                  : '#eeeeee',
+
+              weight:
+                isSelected
+                  ? 1.5
+                  : 0.8,
+
+              color:
+                '#ffffff',
+
+              fillOpacity:
+                isSelected
+                  ? 0.78
+                  : 0.35
+
+            };
+
+          },
+
+
+        onEachFeature:
+          function(
+            feature,
+            layer
+          ) {
+
+            const name =
+              getFeatureRegionName(
+                feature
+              );
+
+
+            const normalized =
+              normalizeRegion(
+                name
+              );
+
+
+            const value =
+              valueMap[
+                normalized
+              ];
+
+
+            layer.bindTooltip(
+
+              '<span>' +
+
+              escapeHtml(
+                getMapLabel(
+                  name
+                )
+              ) +
+
+              '</span>',
+
+              {
+
+                permanent:
+                  true,
+
+                direction:
+                  'center',
+
+                className:
+                  'map-region-label',
+
+                opacity:
+                  1,
+
+                interactive:
+                  false
+
+              }
+
+            );
+
+
+            layer.bindPopup(
+
+              '<strong>' +
+
+              escapeHtml(
+                name
+              ) +
+
+              '</strong><br>' +
+
+              'Tahun: ' +
+
+              (
+                latestYear ||
+                '-'
+              ) +
+
+              '<br>' +
+
+              'Nilai: ' +
+
+              (
+
+                value !==
+                undefined
+
+                  ? formatNumber(
+                      value
+                    )
+
+                  : 'Tidak tersedia'
+
+              )
+
+            );
+
+          }
+
+      }
+    ).addTo(
+      map
+    );
+
+
+  const selectedLayers =
+    [];
+
+
+  geoJsonLayer.eachLayer(
+    function(layer) {
+
+      const name =
+        getFeatureRegionName(
+          layer.feature
+        );
+
+
+      const normalized =
+        normalizeRegion(
+          name
+        );
+
+
+      if (displayAll) {
+
+        selectedLayers.push(
+          layer
+        );
+
+        return;
+
+      }
+
+
+      const match =
+        selectedRegions.some(
+          function(region) {
+
+            return (
+              normalizeRegion(
+                region
+              ) ===
+              normalized
+            );
+
+          }
+        );
+
+
+      if (match) {
+
+        selectedLayers.push(
+          layer
+        );
+
+      }
+
+    }
+  );
+
+
+  if (
+    selectedLayers.length
+  ) {
+
+    const bounds =
+      L.featureGroup(
+        selectedLayers
+      ).getBounds();
+
+
+    if (
+      bounds.isValid()
+    ) {
+
+      map.fitBounds(
+        bounds,
+        {
+          padding:
+            [15, 15]
+        }
+      );
+
+    }
+
+  }
+
+}
+
+
+/* =====================================================
+   DETAIL INDICATOR
+===================================================== */
+
+function showDetail(
+  row
+) {
+
+  const indicator =
+    dashboard.indicators.find(
+      function(item) {
+
+        return (
+          item.row ===
+          row
+        );
+
+      }
+    );
+
+
+  if (!indicator) return;
+
+
+  const detail =
+    document.getElementById(
+      'detailCard'
+    );
+
+
+  detail.style.display =
+    'block';
+
+
+  document.getElementById(
+    'detailTitle'
+  ).textContent =
+    indicator.name;
+
+
+  document.getElementById(
+    'detailCode'
+  ).textContent =
+    'Kode indikator: ' +
+    indicator.code;
+
+
+  const metadata =
+    indicator.metadata || {};
+
+
+  document.getElementById(
+    'detailSourceMetadata'
+  ).textContent =
+    metadata.sourceMetadata ||
+    '—';
+
+
+  document.getElementById(
+    'detailCoverage'
+  ).textContent =
+    metadata.coverage ||
+    '—';
+
+
+  document.getElementById(
+    'detailFrequency'
+  ).textContent =
+    metadata.frequency ||
+    '—';
+
+
+  document.getElementById(
+    'detailSourceActivity'
+  ).textContent =
+    metadata.sourceActivity ||
+    '—';
+
+
+  const thead =
+    document.getElementById(
+      'detailTableHead'
+    );
+
+
+  const tbody =
+    document.getElementById(
+      'detailTable'
+    );
+
+
+  thead.innerHTML =
+    '<th>Wilayah</th>';
+
+
+  tbody.innerHTML =
+
+    '<tr>' +
+
+      '<td colspan="1" class="empty">' +
+
+        'Memuat data...' +
+
+      '</td>' +
+
+    '</tr>';
+
+
+  detail.scrollIntoView({
+    behavior:
+      'smooth',
+
+    block:
+      'start'
+  });
+
+
+  if (
+    indicatorDataCache[row]
+  ) {
+
+    renderDetailTable(
+      indicatorDataCache[row]
+    );
+
+    return;
+
+  }
+
+
+  google.script.run
+
+    .withSuccessHandler(
+      function(data) {
+
+        indicatorDataCache[row] =
+          data;
+
+
+        renderDetailTable(
+          data
+        );
+
+      }
+    )
+
+    .withFailureHandler(
+      function(error) {
+
+        tbody.innerHTML =
+
+          '<tr>' +
+
+            '<td>' +
+
+              escapeHtml(
+                error.message
+              ) +
+
+            '</td>' +
+
+          '</tr>';
+
+      }
+    )
+
+    .getIndicatorValues(
+      row
+    );
+
+}
+
+
+/* =====================================================
+   DETAIL TABLE
+===================================================== */
+
+function renderDetailTable(
+  data
+) {
+
+  const thead =
+    document.getElementById(
+      'detailTableHead'
+    );
+
+
+  const tbody =
+    document.getElementById(
+      'detailTable'
+    );
+
+
+  thead.innerHTML =
+    '<th>Wilayah</th>';
+
+
+  tbody.innerHTML =
+    '';
+
+
+  if (
+    !data ||
+    !data.length
+  ) {
+
+    thead.innerHTML =
+      '<th>Wilayah</th>' +
+      '<th>Data</th>';
+
+
+    tbody.innerHTML =
+
+      '<tr>' +
+
+        '<td colspan="2" class="empty">' +
+
+          'Belum terdapat data nilai.' +
+
+        '</td>' +
+
+      '</tr>';
+
+
+    return;
+
+  }
+
+
+  const years =
+    [
+      ...new Set(
+        data.map(
+          function(item) {
+
+            return Number(
+              item.tahun
+            );
+
+          }
+        )
+      )
+    ].sort(
+      function(a, b) {
+
+        return a - b;
+
+      }
+    );
+
+
+  years.forEach(
+    function(year) {
+
+      thead.innerHTML +=
+
+        '<th>' +
+
+        year +
+
+        '</th>';
+
+    }
+  );
+
+
+  const wilayahList =
+    [];
+
+
+  data.forEach(
+    function(item) {
+
+      const exists =
+        wilayahList.some(
+          function(region) {
+
+            return (
+              normalizeRegion(
+                region
+              ) ===
+              normalizeRegion(
+                item.wilayah
+              )
+            );
+
+          }
+        );
+
+
+      if (!exists) {
+
+        wilayahList.push(
+          item.wilayah
+        );
+
+      }
+
+    }
+  );
+
+
+  const provinceIndex =
+    wilayahList.findIndex(
+      function(region) {
+
+        return (
+          normalizeRegion(
+            region
+          ) ===
+          normalizeRegion(
+            PROVINCE_NAME
+          )
+        );
+
+      }
+    );
+
+
+  if (
+    provinceIndex > 0
+  ) {
+
+    const province =
+      wilayahList.splice(
+        provinceIndex,
+        1
+      )[0];
+
+
+    wilayahList.unshift(
+      province
+    );
+
+  }
+
+
+  wilayahList.forEach(
+    function(wilayah) {
+
+      const tr =
+        document.createElement(
+          'tr'
+        );
+
+
+      let rowHtml =
+
+        '<td>' +
+
+        escapeHtml(
+          wilayah
+        ) +
+
+        '</td>';
+
+
+      years.forEach(
+        function(year) {
+
+          const found =
+            data.find(
+              function(item) {
+
+                return (
+
+                  normalizeRegion(
+                    item.wilayah
+                  ) ===
+                  normalizeRegion(
+                    wilayah
+                  )
+
+                  &&
+
+                  Number(
+                    item.tahun
+                  ) ===
+                  year
+
+                );
+
+              }
+            );
+
+
+          rowHtml +=
+
+            '<td>' +
+
+            (
+
+              found
+
+                ? formatNumber(
+                    found.nilai
+                  )
+
+                : '-'
+
+            ) +
+
+            '</td>';
+
+        }
+      );
+
+
+      tr.innerHTML =
+        rowHtml;
+
+
+      tbody.appendChild(
+        tr
+      );
+
+    }
+  );
+
+}
+
+
+/* =====================================================
+   MAP REGION NAME
+===================================================== */
+
+function getFeatureRegionName(
+  feature
+) {
+
+  const p =
+    feature.properties ||
+    {};
+
+
+  return (
+
+    p.wadmkk ||
+    p.WADMKK ||
+    p.namobj ||
+    p.NAMOBJ ||
+    p.KABKOT ||
+    p.name ||
+    p.NAME_2 ||
+    p.NAME_1 ||
+    'Wilayah'
+
+  );
+
+}
+
+
+/* =====================================================
+   MAP LABEL
+===================================================== */
+
+function getMapLabel(
+  name
+) {
+
+  if (!name) return '';
+
+
+  let value =
+    String(
+      name
+    ).trim();
+
+
+  value =
+    value
+
+      .replace(
+        /^Kabupaten\s+/i,
+        ''
+      )
+
+      .replace(
+        /^Kab\.\s+/i,
+        ''
+      )
+
+      .replace(
+        /^Kab\s+/i,
+        ''
+      )
+
+      .replace(
+        /^Kota\s+/i,
+        ''
+      )
+
+      .trim();
+
+
+  const aliases = {
+
+    'Hulu Sungai Selatan':
+      'HSS',
+
+    'Kabupaten Hulu Sungai Selatan':
+      'HSS',
+
+    'HSS':
+      'HSS',
+
+    'Hulu Sungai Utara':
+      'HSU',
+
+    'Kabupaten Hulu Sungai Utara':
+      'HSU',
+
+    'HSU':
+      'HSU',
+
+    'Hulu Sungai Tengah':
+      'HST',
+
+    'Kabupaten Hulu Sungai Tengah':
+      'HST',
+
+    'HST':
+      'HST'
+
+  };
+
+
+  return (
+    aliases[value] ||
+    value
+  );
+
+}
+
+
+/* =====================================================
+   NORMALIZE REGION
+===================================================== */
+
+function normalizeRegion(
+  name
+) {
+
+  if (!name) return '';
+
+
+  let value =
+    String(
+      name
+    )
+      .toLowerCase()
+      .trim();
+
+
+  const aliases = {
+
+    'hss':
+      'hulusungaiselatan',
+
+    'hulusungaiselatan':
+      'hulusungaiselatan',
+
+    'hsu':
+      'hulusungaiutara',
+
+    'hulusungaiutara':
+      'hulusungaiutara',
+
+    'hst':
+      'hulusungaitengah',
+
+    'hulusungaitengah':
+      'hulusungaitengah'
+
+  };
+
+
+  value =
+    value
+
+      .replace(
+        /\bkabupaten\b/g,
+        ''
+      )
+
+      .replace(
+        /\bkab\.\b/g,
+        ''
+      )
+
+      .replace(
+        /\bkab\b/g,
+        ''
+      )
+
+      .replace(
+        /\bkota\b/g,
+        ''
+      )
+
+      .trim();
+
+
+  value =
+    value.replace(
+      /[^a-z0-9]/g,
+      ''
+    );
+
+
+  if (
+    aliases[value]
+  ) {
+
+    return aliases[value];
+
+  }
+
+
+  const compactAliases = {
+
+    'hss':
+      'hulusungaiselatan',
+
+    'kabupatenuhulusungaiselatan':
+      'hulusungaiselatan',
+
+    'hulusungaiselatan':
+      'hulusungaiselatan',
+
+    'hsu':
+      'hulusungaiutara',
+
+    'kabupatenuhulusungaiutara':
+      'hulusungaiutara',
+
+    'hulusungaiutara':
+      'hulusungaiutara',
+
+    'hst':
+      'hulusungaitengah',
+
+    'kabupatenuhulusungaitengah':
+      'hulusungaitengah',
+
+    'hulusungaitengah':
+      'hulusungaitengah'
+
+  };
+
+
+  if (
+    compactAliases[value]
+  ) {
+
+    return compactAliases[value];
+
+  }
+
+
+  return value;
+
+}
+
+
+/* =====================================================
+   MAP COLOR
+===================================================== */
+
+function getValueColor(
+  value,
+  min,
+  max,
+  reverse
+) {
+
+  if (
+    value === undefined ||
+    value === null ||
+    isNaN(value)
+  ) {
+
+    return '#eeeeee';
+
+  }
+
+
+  if (
+    max === min
+  ) {
+
+    return '#f28c28';
+
+  }
+
+
+  let ratio =
+    (value - min) /
+    (max - min);
+
+
+  if (reverse) {
+
+    ratio =
+      1 - ratio;
+
+  }
+
+
+  if (
+    ratio < .25
+  ) {
+
+    return '#fde6cf';
+
+  }
+
+
+  if (
+    ratio < .50
+  ) {
+
+    return '#f9c58d';
+
+  }
+
+
+  if (
+    ratio < .75
+  ) {
+
+    return '#f39a4a';
+
+  }
+
+
+  return '#e87516';
+
+}
+
+
+/* =====================================================
+   LEGEND COLOR
+===================================================== */
+
+function getLegendColor(
+  index
+) {
+
+  const colors = [
+
+    '#e87516',
+    '#4e79a7',
+    '#59a14f',
+    '#b07aa1',
+    '#f1ce63',
+    '#76b7b2',
+    '#ed6a5a',
+    '#8c6bb1',
+    '#5ab4ac',
+    '#d95f02',
+    '#7570b3',
+    '#66a61e',
+    '#e7298a'
+
+  ];
+
+
+  return colors[
+    index %
+    colors.length
+  ];
+
+}
+
+
+/* =====================================================
+   CLEAR CHART
+===================================================== */
+
+function clearChart() {
+
+  document.getElementById(
+    'chart'
+  ).innerHTML =
+
+    '<div class="empty">' +
+
+    'Pilih indikator untuk melihat perkembangan nilai.' +
+
+    '</div>';
+
+
+  document.getElementById(
+    'chartLegend'
+  ).innerHTML =
+    '';
+
+}
+
+
+/* =====================================================
+   CLEAR MAP
+===================================================== */
+
+function clearMap() {
+
+  document.getElementById(
+    'mapYear'
+  ).textContent =
+    '-';
+
+
+  if (
+    map &&
+    geoJsonLayer
+  ) {
+
+    geoJsonLayer.eachLayer(
+      function(layer) {
+
+        layer.setStyle({
+
+          fillColor:
+            '#eeeeee',
+
+          fillOpacity:
+            0.35
+
+        });
+
+      }
+    );
+
+  }
+
+}
+
+
+/* =====================================================
+   PARSE NUMBER
+===================================================== */
+
+function parseNumber(
+  value
+) {
+
+  if (
+    typeof value ===
+    'number'
+  ) {
+
+    return value;
+
+  }
+
+
+  const cleaned =
+    String(value)
+      .replace(
+        /,/g,
+        ''
+      )
+      .replace(
+        /%/g,
+        ''
+      )
+      .trim();
+
+
+  const number =
+    Number(
+      cleaned
+    );
+
+
+  return isNaN(number)
+    ? 0
+    : number;
+
+}
+
+
+/* =====================================================
+   FORMAT NUMBER
+===================================================== */
+
+function formatNumber(
+  value
+) {
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+
+    return '-';
+
+  }
+
+
+  const number =
+    parseNumber(
+      value
+    );
+
+
+  return number.toLocaleString(
+    'id-ID',
+    {
+      maximumFractionDigits:
+        4
+    }
+  );
+
+}
+
+
+/* =====================================================
+   FORMAT PERCENT
+===================================================== */
+
+function formatPercent(
+  value
+) {
+
+  return Number(
+    value || 0
+  ).toLocaleString(
+    'id-ID',
+    {
+
+      minimumFractionDigits:
+        1,
+
+      maximumFractionDigits:
+        1
+
+    }
+  ) + '%';
+
+}
+
+
+/* =====================================================
+   ESCAPE HTML
+===================================================== */
+
+function escapeHtml(
+  value
+) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+
+    return '';
+
+  }
+
+
+  return String(value)
+
+    .replace(
+      /&/g,
+      '&amp;'
+    )
+
+    .replace(
+      /</g,
+      '&lt;'
+    )
+
+    .replace(
+      />/g,
+      '&gt;'
+    )
+
+    .replace(
+      /"/g,
+      '&quot;'
+    )
+
+    .replace(
+      /'/g,
+      '&#039;'
+    );
+
+}
+
+
+/* =====================================================
+   HIDE LOADING
+===================================================== */
+
+function hideLoading() {
+
+  const loading =
+    document.getElementById(
+      'loading'
+    );
+
+
+  loading.style.opacity =
+    '0';
+
+
+  setTimeout(
+    function() {
+
+      loading.style.display =
+        'none';
+
+    },
+    250
+  );
+
+}
+
+</script>
+
+
+</body>
+</html>

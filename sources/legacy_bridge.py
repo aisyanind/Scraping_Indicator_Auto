@@ -1,10 +1,3 @@
-"""
-Bridge source stabil / source adapter ke Auto Project.
-
-Project lama tidak dimodifikasi.
-Source khusus yang sudah stabil dipanggil sebelum generic extractor.
-"""
-
 import importlib
 import re
 import os
@@ -100,6 +93,10 @@ def _error_result(error, source, status="LEGACY_FAILED", confidence=0.0):
         "SOURCE_UNAVAILABLE" in text
         or "UnavailableError" in type(error).__name__
         or "tidak tersedia" in text
+        or "Dataset 107 getData() tidak memiliki row" in text
+        or "KALIMANTAN SELATAN tidak ditemukan pada row Dataset 107"
+        in text
+        or "tidak memiliki 12 key bulan" in text
     ):
         detected = "DATA_TIDAK_ADA"
 
@@ -384,6 +381,67 @@ def try_legacy_source(
         except Exception as error:
             return _error_result(error, "ikg")
 
+    # ========================================================
+    # PENUMPANG UDARA (50) - adapter khusus kode=50.
+    # Sumber: BPS (bps.go.id). Tabel BPS modern menyematkan
+    # data sebagai JSON di dalam HTML.
+    # ========================================================
+    if (
+        kode_norm == "50"
+        or "penumpang angkutan udara" in nama_norm
+        or "penumpang angkutan udara" in lower_description
+        or (
+            "penumpang" in lower_description
+            and ("udara" in lower_description
+                 or "penerbangan" in lower_description)
+        )
+    ):
+        from sources.udara_source import scrape_penumpang_udara
+
+        try:
+            return _ok(
+                scrape_penumpang_udara(
+                    url=url,
+                    tahun=tahun,
+                    description=description,
+                    wilayah=wilayah,
+                ),
+                "udara",
+            )
+        except Exception as error:
+            return _error_result(error, "udara")
+
+    # ========================================================
+    # NILAI TUKAR PETANI / NTP (23.5 / 51) - adapter khusus.
+    # Sumber: BPS (bps.go.id). Tabel BPS modern menyematkan
+    # data sebagai JSON di dalam HTML. NTP adalah indeks (~70-150).
+    # ========================================================
+    if (
+        kode_norm in ("23.5", "51")
+        or "nilai tukar petani" in nama_norm
+        or "nilai tukar petani" in lower_description
+        or "ntp" in lower_description
+        or (
+            "tukar" in lower_description
+            and "petani" in lower_description
+        )
+    ):
+        from sources.ntp_source import try_ntp_source
+
+        try:
+            ntp_result = try_ntp_source(
+                url=url,
+                tahun=tahun,
+                description=description,
+                wilayah=wilayah,
+            )
+
+            if ntp_result is not None:
+                return ntp_result
+
+        except Exception as error:
+            return _error_result(error, "ntp")
+
     if not os.path.isdir(LEGACY_INDICATORS_PATH):
         return None
 
@@ -510,6 +568,44 @@ def try_legacy_source(
 
                     except Exception as adapter_error:
                         return _error_result(adapter_error, "bps_pdrb")
+
+                # ============================================================
+                # BPS TEMPLATE: Auto-handle SEMUA indikator BPS lainnya.
+                # Jika tidak ada adapter khusus yang match, gunakan template.
+                # ============================================================
+                if "/statistics-table/" in lower_url:
+                    from sources.bps_table_adapter import try_bps_table
+
+                    try:
+                        template_result = try_bps_table(
+                            url=url,
+                            tahun=tahun,
+                            description=description,
+                            wilayah=wilayah,
+                        )
+
+                        if template_result is not None:
+                            return template_result
+
+                    except Exception as error:
+                        return _error_result(error, "bps_table_template")
+
+                # PDF adapter: handle /pressrelease/, /subject/, atau halaman BPS lainnya.
+                from sources.bps_pdf_adapter import try_bps_pdf
+
+                try:
+                    template_result = try_bps_pdf(
+                        url=url,
+                        tahun=tahun,
+                        description=description,
+                        wilayah=wilayah,
+                    )
+
+                    if template_result is not None:
+                        return template_result
+
+                except Exception as error:
+                    return _error_result(error, "bps_pdf_template")
 
             if (
                 "bappenas.go.id" in lower_url

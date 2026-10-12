@@ -245,6 +245,15 @@
       line-height: 1.4;
     }
 
+    .hint code {
+      font-family: Consolas, "Courier New", monospace;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0 4px;
+      color: var(--ink-soft);
+    }
+
     .year-range {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -786,6 +795,10 @@
       display: none;
     }
 
+    .hidden {
+      display: none !important;
+    }
+
     .modal-box {
       background: white;
       border-radius: var(--radius-xl);
@@ -1090,11 +1103,23 @@
         <button class="add-source-btn" id="addSourceBtn" type="button" onclick="addSource()">
           + Tambah Sumber
         </button>
+        <div class="hint">
+          Sumber 2 &amp; 3 bersifat pelengkap: dipakai otomatis untuk tahun
+          yang tidak tersedia di Sumber 1. Cukup tulis Rumus
+          <code>S1</code>.
+        </div>
       </div>
 
       <div>
         <label for="rumus">Rumus</label>
-        <input id="rumus" value="S1">
+        <input id="rumus" value="S1" placeholder="S1 (default) — atau contoh: (S1/S2)*100">
+        <div class="hint">
+          <code>S1</code> = hasil dari Sumber 1 (kosong juga dianggap
+          <code>S1</code>). Sumber 2/3 otomatis dipakai melengkapi tahun
+          yang belum tersedia di Sumber 1 — tidak perlu ditulis di sini.
+          Pakai aritmatika hanya jika indikator butuh operasi, mis.
+          <code>(S1/S2)*100</code>.
+        </div>
       </div>
 
     </div>

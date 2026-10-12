@@ -399,6 +399,19 @@ def process_one(raw_job):
         f"results={len(output['results'])}"
     )
 
+    if final_status != "SUCCESS":
+        for diagnostic in output["diagnostics"][:5]:
+            message = str(
+                diagnostic.get("message") or diagnostic.get("status") or ""
+            ).splitlines()[0][:200]
+            print(
+                f"    [DIAG] tahun={diagnostic.get('tahun')} "
+                f"sumber={diagnostic.get('source')} "
+                f"status={diagnostic.get('status')} "
+                f"confidence={diagnostic.get('confidence')} | "
+                f"{message}"
+            )
+
 
 def run_worker():
     mp.freeze_support()

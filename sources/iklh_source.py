@@ -5,33 +5,13 @@ from urllib.parse import urlparse
 
 import requests
 
+from sources.region_utils import normalize_region
+
 
 NAMA_PROVINSI = "Prov. Kalimantan Selatan"
 
 # Cache dipisahkan per URL sumber agar aman bila nanti dataset berubah.
 _TABLE_CACHE = {}
-
-
-def _normalize_wilayah(value):
-    text = re.sub(
-        r"\s+",
-        " ",
-        str(value or "").strip().lower(),
-    )
-
-    replacements = (
-        ("provinsi ", "prov. "),
-        ("prov ", "prov. "),
-        ("kabupaten ", "kab. "),
-        ("kab ", "kab. "),
-    )
-
-    for old, new in replacements:
-        if text.startswith(old):
-            text = new + text[len(old):]
-            break
-
-    return text
 
 
 def _parse_index_number(value):
@@ -333,13 +313,13 @@ def _get_value(
     nama_wilayah,
     tahun,
 ):
-    target = _normalize_wilayah(
+    target = normalize_region(
         nama_wilayah
     )
 
     for info in table.values():
         if (
-            _normalize_wilayah(
+            normalize_region(
                 info["nama"]
             )
             != target
@@ -406,8 +386,8 @@ def _resolve_scope(
     kab_kota_names = [
         name
         for name in all_names
-        if _normalize_wilayah(name)
-        != _normalize_wilayah(
+        if normalize_region(name)
+        != normalize_region(
             NAMA_PROVINSI
         )
     ]

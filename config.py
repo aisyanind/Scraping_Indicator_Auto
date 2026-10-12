@@ -35,6 +35,14 @@ PER_DOMAIN_LIMIT = int(os.getenv("PER_DOMAIN_LIMIT", "1"))
 APPS_SCRIPT_CONCURRENCY = int(os.getenv("APPS_SCRIPT_CONCURRENCY", "2"))
 INNER_CONCURRENCY = int(os.getenv("INNER_CONCURRENCY", "3"))
 
+# OCR hanya dipakai sebagai fallback terakhir untuk PDF scan/gambar.
+OCR_ENABLED = os.getenv("OCR_ENABLED", "true").lower() not in {
+    "0", "false", "no",
+}
+OCR_MAX_PAGES = int(os.getenv("OCR_MAX_PAGES", "20"))
+OCR_DPI = int(os.getenv("OCR_DPI", "180"))
+OCR_LANG = os.getenv("OCR_LANG", "ind")
+
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

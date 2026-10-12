@@ -15,39 +15,20 @@ import requests
 from bs4 import BeautifulSoup
 
 from config import REQUEST_HEADERS
+from sources.bps_utils import parse_number_id as _parse_number_id
+from sources.region_utils import normalize_region, KALSEL_KAB_KOTA
 
 PROVINSI_TARGET = "Prov. Kalimantan Selatan"
 
 # Sumber standar bila kolom Sumber_1 diisi nama/teks (bukan URL).
 DEFAULT_SOURCE = "https://ipk.kemenbud.go.id/provinsi/63"
 
-KALSEL_KAB_KOTA = [
-    "Kab. Tanah Laut",
-    "Kab. Kotabaru",
-    "Kab. Banjar",
-    "Kab. Barito Kuala",
-    "Kab. Tapin",
-    "Kab. Hulu Sungai Selatan",
-    "Kab. Hulu Sungai Tengah",
-    "Kab. Hulu Sungai Utara",
-    "Kab. Tabalong",
-    "Kab. Tanah Bumbu",
-    "Kab. Balangan",
-    "Kota Banjarmasin",
-    "Kota Banjarbaru",
-]
-
-
 class IpkUnavailableError(RuntimeError):
     """Data IPK tidak tersedia untuk tahun yang diminta."""
 
 
-def _normalize_region(value):
-    return " ".join(str(value or "").strip().lower().split())
-
-
 def _prov_norm(value):
-    return _normalize_region(value)
+    return normalize_region(value)
 
 
 def get_sumber_html_data(url):
@@ -122,26 +103,6 @@ def get_sumber_html_data(url):
         )
 
     return hasil_provinsi
-
-
-def _parse_number_id(value):
-    if value is None:
-        return None
-
-    text = str(value).strip()
-
-    if not text:
-        return None
-
-    if "," in text and "." in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif "," in text:
-        text = text.replace(",", ".")
-
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 def _resolve_targets(description, default_wilayah):

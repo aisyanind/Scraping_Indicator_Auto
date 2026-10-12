@@ -44,6 +44,13 @@ python main.py worker
 
 Worker harus terus hidup agar job dari Apps Script diproses.
 
+## OCR PDF Scan
+
+PDF yang berisi gambar/scan memakai OCR sebagai fallback terakhir. Paket Python
+`pytesseract` sudah tercantum di `requirements.txt`, tetapi Windows juga harus
+memiliki binary Tesseract OCR dan bahasa Indonesia (`ind`) terpasang serta
+tersedia di `PATH`. Atur `OCR_ENABLED=false` jika OCR tidak ingin digunakan.
+
 Untuk tes satu URL tanpa Google Sheet:
 
 ```powershell

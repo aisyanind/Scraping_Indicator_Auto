@@ -30,6 +30,8 @@ from io import BytesIO
 import pdfplumber
 import requests
 
+from sources.region_utils import normalize_region, normalize_text, REGION_ALIASES
+
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
 HEADERS = {
@@ -38,54 +40,9 @@ HEADERS = {
 
 PROVINSI_CANONICAL = "Prov. Kalimantan Selatan"
 
-REGION_ALIASES = {
-    "Kalimantan Selatan": PROVINSI_CANONICAL,
-    "Tanah Laut": "Kab. Tanah Laut",
-    "Kotabaru": "Kab. Kotabaru",
-    "Banjar": "Kab. Banjar",
-    "Barito Kuala": "Kab. Barito Kuala",
-    "Tapin": "Kab. Tapin",
-    "Hulu Sungai Selatan": "Kab. Hulu Sungai Selatan",
-    "Hulu Sungai Tengah": "Kab. Hulu Sungai Tengah",
-    "Hulu Sungai Utara": "Kab. Hulu Sungai Utara",
-    "Tabalong": "Kab. Tabalong",
-    "Tanah Bumbu": "Kab. Tanah Bumbu",
-    "Balangan": "Kab. Balangan",
-    "Kota Banjarmasin": "Kota Banjarmasin",
-    "Kota Banjar Baru": "Kota Banjarbaru",
-    "Kota Banjarbaru": "Kota Banjarbaru",
-}
-
 # Cache all_data per URL listing (dipakai antar-tahun dalam satu job).
 _ALL_DATA_CACHE = {}
 _IKG_LOCK = threading.Lock()
-
-
-def _normalize_text(value):
-    return re.sub(
-        r"\s+",
-        " ",
-        str(value or "").strip().lower(),
-    )
-
-
-def _normalize_region(value):
-    text = _normalize_text(value)
-
-    for old, new in (
-        ("provinsi ", "prov. "),
-        ("prov ", "prov. "),
-        ("kabupaten ", "kab. "),
-        ("kab ", "kab. "),
-    ):
-        if text.startswith(old):
-            text = new + text[len(old):]
-            break
-
-    if text == "kalimantan selatan":
-        text = "prov. kalimantan selatan"
-
-    return text
 
 
 def _canonical_region(source_name):
@@ -95,14 +52,14 @@ def _canonical_region(source_name):
         return REGION_ALIASES[name]
 
     for alias, canonical in REGION_ALIASES.items():
-        if _normalize_text(alias) == _normalize_text(name):
+        if normalize_text(alias) == normalize_text(name):
             return canonical
 
     return name
 
 
 def _is_ikg_title(title):
-    text = _normalize_text(title)
+    text = normalize_text(title)
 
     # "IKG" di judul bisa berarti "Indeks Kesulitan Geografis" (Podes),
     # jadi tidak dipakai sebagai penanda; fokus pada kata ketimpangan.
@@ -449,8 +406,8 @@ def _resolve_targets(
     kab_kota_names = [
         name
         for name in canonical_names
-        if _normalize_region(name)
-        != _normalize_region(PROVINSI_CANONICAL)
+        if normalize_region(name)
+        != normalize_region(PROVINSI_CANONICAL)
     ]
 
     if wants_kab_kota and wants_provinsi:
@@ -472,12 +429,12 @@ def _value_for_region(
     target_region,
     tahun,
 ):
-    target_norm = _normalize_region(
+    target_norm = normalize_region(
         target_region
     )
 
     for region, year_values in all_data.items():
-        if _normalize_region(region) != target_norm:
+        if normalize_region(region) != target_norm:
             continue
 
         value = year_values.get(

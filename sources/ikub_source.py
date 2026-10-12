@@ -20,6 +20,8 @@ import zipfile
 
 import requests
 
+from sources.bps_utils import parse_number_id as _parse_number_id
+
 PROVINSI_TARGET = "Prov. Kalimantan Selatan"
 
 REQUEST_HEADERS = {
@@ -42,26 +44,6 @@ DEFAULT_SOURCE = (
 
 class IkubUnavailableError(RuntimeError):
     """Data IKUB tidak tersedia untuk tahun yang diminta."""
-
-
-def _parse_number_id(value):
-    if value is None:
-        return None
-
-    text = str(value).strip()
-
-    if not text:
-        return None
-
-    if "," in text and "." in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif "," in text:
-        text = text.replace(",", ".")
-
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 def _download_csv_text(file_url):

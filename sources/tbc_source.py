@@ -20,6 +20,7 @@ import pdfplumber
 import requests
 
 from config import REQUEST_HEADERS
+from sources.bps_utils import parse_number_id
 
 PROVINSI_TARGET = "Prov. Kalimantan Selatan"
 
@@ -30,26 +31,6 @@ CSV_REQUEST_HEADERS = {
 
 _PDF_CACHE = {}
 _ALL_DATA_CACHE = {}
-
-
-def parse_number_id(value):
-    if value is None:
-        return None
-
-    text = str(value).strip()
-
-    if not text:
-        return None
-
-    if "," in text and "." in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif "," in text:
-        text = text.replace(",", ".")
-
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 def _download_with_fallback(url, headers, timeout):

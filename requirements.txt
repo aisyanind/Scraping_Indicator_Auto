@@ -7,3 +7,4 @@ lxml>=5.2
 beautifulsoup4>=4.12
 selenium>=4.23
 python-dotenv>=1.0
+pytesseract>=0.3.13

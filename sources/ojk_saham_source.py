@@ -16,26 +16,11 @@ import re
 import sys
 
 from config import LEGACY_INDICATORS_PATH
+from sources.region_utils import normalize_region, KALSEL_KAB_KOTA
 
 
 KALSEL_PROVINSI = [
     "Prov. Kalimantan Selatan",
-]
-
-KALSEL_KAB_KOTA = [
-    "Kab. Tanah Laut",
-    "Kab. Kotabaru",
-    "Kab. Banjar",
-    "Kab. Barito Kuala",
-    "Kab. Tapin",
-    "Kab. Hulu Sungai Selatan",
-    "Kab. Hulu Sungai Tengah",
-    "Kab. Hulu Sungai Utara",
-    "Kab. Tabalong",
-    "Kab. Tanah Bumbu",
-    "Kab. Balangan",
-    "Kota Banjarmasin",
-    "Kota Banjarbaru",
 ]
 
 KALSEL_ALL = KALSEL_PROVINSI + KALSEL_KAB_KOTA
@@ -63,11 +48,6 @@ def _load_ojk():
                 pass
 
 
-def _normalize_region(value):
-    text = " ".join(str(value or "").strip().lower().split())
-    return text
-
-
 def _region_variants(name):
     """
     Bangun daftar variasi nama wilayah untuk dicocokkan dengan
@@ -79,7 +59,7 @@ def _region_variants(name):
         kabupaten hulu sungai selatan
         kab hulu sungai selatan
     """
-    norm = _normalize_region(name)
+    norm = normalize_region(name)
 
     variants = set()
 
@@ -176,7 +156,7 @@ def _canonical_wilayah(row_label):
     Menggunakan word boundary regex untuk menghindari false match
     (mis. "banjar" vs "banjarbaru").
     """
-    label = _normalize_region(row_label)
+    label = normalize_region(row_label)
 
     if not label:
         return None

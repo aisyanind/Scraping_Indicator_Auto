@@ -14,7 +14,7 @@ Alur:
 
 import re
 from io import StringIO
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import pandas as pd
 import requests
@@ -33,10 +33,14 @@ DOWNLOAD_MARKERS = (
 )
 
 MAX_DEPTH = 2
-MAX_LINKS = 15
-RENDER_WAIT = 5
-MAX_JS_CHUNKS = 8
-MAX_APIS = 20
+MAX_LINKS = 8
+RENDER_WAIT = 3
+MAX_JS_CHUNKS = 4
+MAX_APIS = 10
+API_PATH_HINTS = (
+    "/api/", "/v1/", "/v2/", "/data/", "/dataset/",
+    "/datasets/", "/table/", "/tables/", "/download/",
+)
 
 
 def _decode_html(content):
@@ -83,7 +87,8 @@ def _matches_instruction(link, text, instruction):
 
 def _is_data_file(href):
     lowered = href.lower()
-    return lowered.endswith(DATA_EXTENSIONS) or any(
+    path = urlparse(href).path.lower()
+    return path.endswith(DATA_EXTENSIONS) or any(
         marker in lowered
         for marker in DOWNLOAD_MARKERS
     )
@@ -119,6 +124,21 @@ def _collect_links(html, base_url, instruction):
 
         if absolute not in candidates:
             candidates.append(absolute)
+
+    # Digital book/viewer sering menyembunyikan file di iframe/embed,
+    # bukan pada tautan <a> yang terlihat oleh pengguna.
+    for attribute in ("src", "data"):
+        for href in re.findall(
+            rf'<(?:iframe|embed|object)[^>]+{attribute}=["\']([^"\']+)',
+            html,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            href = href.strip()
+            if href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+            absolute = urljoin(base_url, href)
+            if absolute not in candidates:
+                candidates.append(absolute)
 
     # Data file diutamakan, lalu link yang cocok indikator.
     data_files = [
@@ -159,7 +179,7 @@ def _fetch_link(link):
     response = requests.get(
         link,
         headers=REQUEST_HEADERS,
-        timeout=60,
+        timeout=30,
         allow_redirects=True,
     )
     response.raise_for_status()
@@ -231,7 +251,7 @@ def _fetch_js_chunks(js_urls):
             response = requests.get(
                 url,
                 headers=REQUEST_HEADERS,
-                timeout=15,
+                timeout=8,
             )
             response.raise_for_status()
             texts.append(response.text)
@@ -252,11 +272,14 @@ def _extract_api_templates(js_text):
     patterns = set()
 
     for match in re.finditer(
-        r'["\'`](/api/[^"\'`]*?)["\'`]',
+        r'["\'`]((?:https?://|/)[^"\'`\s]+)["\'`]',
         js_text,
     ):
         path = match.group(1).strip()
-        if not path or path.endswith(("/", ".js", ".css")):
+        lowered = path.lower()
+        if not any(hint in lowered for hint in API_PATH_HINTS):
+            continue
+        if path.endswith(("/", ".js", ".css")):
             continue
         patterns.add(path)
 
@@ -391,7 +414,7 @@ def _discover_api(payload, instruction, tahun):
             response = requests.get(
                 url,
                 headers=REQUEST_HEADERS,
-                timeout=20,
+                timeout=10,
             )
             response.raise_for_status()
             response.json()
@@ -426,7 +449,7 @@ def _discover_api(payload, instruction, tahun):
             response = requests.get(
                 url,
                 headers=REQUEST_HEADERS,
-                timeout=20,
+                timeout=10,
             )
             data = response.json()
         except Exception:
@@ -469,7 +492,7 @@ def _discover_api(payload, instruction, tahun):
                 response = requests.get(
                     url,
                     headers=REQUEST_HEADERS,
-                    timeout=20,
+                    timeout=10,
                 )
                 response.raise_for_status()
                 response.json()
@@ -503,6 +526,20 @@ def extract_discovery(payload, instruction, tahun, depth=0):
 
     raw_html = _decode_html(payload.content)
 
+    from extractors.flip_pdf import extract_flip_pdf
+
+    try:
+        flip_result = extract_flip_pdf(payload, instruction, tahun)
+    except Exception as error:
+        print(
+            f"    [FLIP-PDF] Gagal extract: "
+            f"{str(error).splitlines()[0][:200]}"
+        )
+        flip_result = None
+
+    if flip_result is not None:
+        return flip_result
+
     # 1) Coba tabel dari HTML asli (halaman server-render).
     direct = _extract_tables(
         raw_html,
@@ -526,12 +563,91 @@ def extract_discovery(payload, instruction, tahun, depth=0):
 
     html_sources = [raw_html]
 
-    # 3) SPA: render dengan Selenium agar DOM penuh.
-    if payload.kind == "spa" and depth < MAX_DEPTH:
+    # 3) Render SPA atau HTML viewer yang kosong agar JavaScript dan
+    # network API-nya dapat diamati browser.
+    if payload.kind in {"html", "spa"} and depth < MAX_DEPTH:
         try:
-            from extractors.browser import render_page
+            from extractors.browser import render_page_capture_network
 
-            rendered = render_page(page_url, wait_seconds=RENDER_WAIT)
+            rendered, network_responses, screenshot = render_page_capture_network(
+                page_url,
+                wait_seconds=RENDER_WAIT,
+            )
+            print(
+                f"    [DISCOVERY] Browser network responses="
+                f"{len(network_responses)}"
+            )
+
+            for response_url, content, content_type in network_responses:
+                if content_type.startswith("image/"):
+                    from extractors.pdf import ocr_image
+
+                    result = ocr_image(
+                        content,
+                        instruction,
+                        tahun,
+                    )
+                    matches_target = result is not None and result.value is not None
+                else:
+                    response_kind = detect_kind(
+                        content,
+                        content_type=content_type,
+                        url=response_url,
+                    )
+                    if response_kind == "pdf":
+                        result = _run_sub_payload(
+                            SourcePayload(
+                                url=response_url,
+                                kind="pdf",
+                                content=content,
+                                content_type=content_type,
+                                final_url=response_url,
+                            ),
+                            instruction,
+                            tahun,
+                        )
+                        matches_target = (
+                            result is not None
+                            and result.value is not None
+                        )
+                    else:
+                        result = _extract_json_result(
+                            content,
+                            instruction,
+                            tahun,
+                            source_type="browser:network",
+                        )
+                        matches_target = _result_has_target_region(
+                            result,
+                            instruction,
+                        )
+
+                if (
+                    result is not None
+                    and result.status in {"SUCCESS", "REVIEW"}
+                    and matches_target
+                ):
+                    result.evidence.append(f"api_url={response_url}")
+                    return result
+
+            if screenshot:
+                from extractors.pdf import ocr_image
+
+                screenshot_result = ocr_image(
+                    screenshot,
+                    instruction,
+                    tahun,
+                )
+                if (
+                    screenshot_result is not None
+                    and screenshot_result.status in {"SUCCESS", "REVIEW"}
+                    and screenshot_result.value is not None
+                ):
+                    screenshot_result.evidence.append(
+                        "browser_screenshot_ocr"
+                    )
+                    return screenshot_result
+
             html_sources.append(rendered)
         except Exception as error:
             print(

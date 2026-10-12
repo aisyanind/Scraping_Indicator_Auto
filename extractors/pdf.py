@@ -4,35 +4,93 @@ from io import BytesIO
 import pandas as pd
 import pdfplumber
 
-from engine.tabular import extract_from_dataframes, normalize_region
+from config import OCR_DPI, OCR_ENABLED, OCR_LANG, OCR_MAX_PAGES
+from engine.tabular import extract_from_dataframes
+from sources.region_utils import normalize_region
 from models import ExtractionResult
 
 
+_CORRUPTED_PATTERNS = [
+    re.compile(r"\d{4}\s+(?:naik|turun)\s+\d", re.IGNORECASE),
+    re.compile(r":\s*\d+[\s\S]{0,30}(?:kunjungan|penumpang|orang)", re.IGNORECASE),
+    re.compile(r"m-to-m\s+\d", re.IGNORECASE),
+    re.compile(r"\d+[.,]\d+%", re.IGNORECASE),
+]
+
+
+def _is_corrupted_column(col_name):
+    text = str(col_name or "").strip()
+    if not text:
+        return True
+    if len(text) > 100:
+        return True
+    nums = re.findall(r"\d+", text)
+    if len(nums) > 4:
+        return True
+    for pattern in _CORRUPTED_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+
+def _clean_table(table):
+    if not table or len(table) < 2:
+        return None
+
+    header = [str(x or "").strip() for x in table[0]]
+
+    corrupted_count = sum(1 for h in header if _is_corrupted_column(h))
+    if corrupted_count > len(header) * 0.5:
+        return None
+
+    rows = table[1:]
+    try:
+        return pd.DataFrame(rows, columns=header)
+    except Exception:
+        try:
+            return pd.DataFrame(table)
+        except Exception:
+            return None
+
+
 def _tables_from_pdf(content):
+    MAX_PAGES = 100
+    TEXT_STRATEGY = {
+        "vertical_strategy": "text",
+        "horizontal_strategy": "text",
+    }
+
     frames = []
 
     with pdfplumber.open(BytesIO(content)) as pdf:
-        for page in pdf.pages:
+        pages = pdf.pages[:MAX_PAGES]
+
+        for page in pages:
             try:
                 tables = page.extract_tables() or []
             except Exception:
                 tables = []
 
+            page_frames = []
             for table in tables:
-                if not table or len(table) < 2:
-                    continue
-                header = [
-                    str(x or "").strip()
-                    for x in table[0]
-                ]
-                rows = table[1:]
+                cleaned = _clean_table(table)
+                if cleaned is not None:
+                    page_frames.append(cleaned)
+
+            if not page_frames:
                 try:
-                    frames.append(pd.DataFrame(rows, columns=header))
+                    tables = page.extract_tables(
+                        table_settings=TEXT_STRATEGY,
+                    ) or []
                 except Exception:
-                    try:
-                        frames.append(pd.DataFrame(table))
-                    except Exception:
-                        pass
+                    tables = []
+
+                for table in tables:
+                    cleaned = _clean_table(table)
+                    if cleaned is not None:
+                        page_frames.append(cleaned)
+
+            frames.extend(page_frames)
 
     return frames
 
@@ -236,6 +294,122 @@ def _line_fallback(content, instruction, tahun):
     )
 
 
+def _ocr_line_fallback(text, instruction, tahun):
+    """Ambil kandidat angka dari baris hasil OCR; hasil selalu perlu review."""
+    region_values = {}
+
+    for line in text.splitlines():
+        line_norm = normalize_region(line)
+
+        for target in instruction.target_wilayahs:
+            target_norm = normalize_region(target)
+            bare = re.sub(r"^(prov\.|kab\.|kota)\s+", "", target_norm)
+            if bare not in line_norm:
+                continue
+
+            numbers = re.findall(
+                r"(?<!\d)(\d+(?:[.,]\d+)?)(?!\d)",
+                line,
+            )
+            values = []
+            for raw in numbers:
+                value = _parse_num(raw)
+                if value is not None and not 1900 <= value <= 2099:
+                    values.append(value)
+
+            if values:
+                region_values[target] = values[-1]
+
+    if not region_values:
+        return None
+
+    return ExtractionResult(
+        status="REVIEW",
+        value=(
+            region_values
+            if len(region_values) > 1
+            else next(iter(region_values.values()))
+        ),
+        confidence=0.40,
+        source_type="pdf:ocr",
+        message="Ditemukan melalui OCR PDF; perlu review.",
+        evidence=["pdf_ocr_fallback", f"ocr_year={int(tahun)}"],
+    )
+
+
+def _ocr_fallback(content, instruction, tahun):
+    """OCR halaman PDF scan jika parser teks biasa tidak menemukan nilai."""
+    if not OCR_ENABLED:
+        return None
+
+    print(f"    [OCR] Mencoba OCR PDF: tahun={int(tahun)}")
+
+    try:
+        import pytesseract
+    except ImportError:
+        return None
+
+    ocr_text = []
+    try:
+        with pdfplumber.open(BytesIO(content)) as pdf:
+            for page in pdf.pages[:OCR_MAX_PAGES]:
+                image = page.to_image(resolution=OCR_DPI).original
+                ocr_text.append(
+                    pytesseract.image_to_string(
+                        image,
+                        lang=OCR_LANG,
+                        config="--psm 6",
+                    )
+                )
+    except Exception as error:
+        return ExtractionResult(
+            status="NEED_PARSER",
+            source_type="pdf:ocr",
+            message=f"OCR tidak tersedia: {str(error).splitlines()[0][:200]}",
+            evidence=["pdf_ocr_failed"],
+        )
+
+    print(f"    [OCR] Teks PDF terbaca: {len(''.join(ocr_text))} karakter")
+    return _ocr_line_fallback(
+        "\n".join(ocr_text),
+        instruction,
+        tahun,
+    )
+
+
+def ocr_image(content, instruction, tahun):
+    """OCR satu gambar halaman viewer digital."""
+    if not OCR_ENABLED:
+        return None
+
+    print(f"    [OCR] Mencoba OCR gambar: tahun={int(tahun)}")
+
+    try:
+        import pytesseract
+        from PIL import Image
+
+        image = Image.open(BytesIO(content))
+        text = pytesseract.image_to_string(
+            image,
+            lang=OCR_LANG,
+            config="--psm 6",
+        )
+    except Exception as error:
+        return ExtractionResult(
+            status="NEED_PARSER",
+            source_type="image:ocr",
+            message=f"OCR gambar tidak tersedia: {str(error).splitlines()[0][:200]}",
+            evidence=["image_ocr_failed"],
+        )
+
+    print(f"    [OCR] Teks gambar terbaca: {len(text)} karakter")
+    result = _ocr_line_fallback(text, instruction, tahun)
+    if result is not None:
+        result.source_type = "image:ocr"
+        result.evidence.append("image_ocr_fallback")
+    return result
+
+
 def extract_pdf(payload, instruction, tahun):
     frames = _tables_from_pdf(payload.content)
 
@@ -258,8 +432,21 @@ def extract_pdf(payload, instruction, tahun):
     if text_table is not None:
         return text_table
 
-    return _line_fallback(
+    line_result = _line_fallback(
         payload.content,
         instruction,
         tahun,
     )
+
+    if line_result.status in {"SUCCESS", "REVIEW"}:
+        return line_result
+
+    ocr_result = _ocr_fallback(
+        payload.content,
+        instruction,
+        tahun,
+    )
+    if ocr_result is not None:
+        return ocr_result
+
+    return line_result

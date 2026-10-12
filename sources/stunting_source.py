@@ -251,17 +251,6 @@ def _download_pdf_urllib(pdf_url):
         return None
 
 
-def _split_source_urls(url):
-    """
-    Sumber_1 boleh berisi beberapa link dipisah ';', baris baru,
-    atau koma sebelum link berikutnya.
-    Contoh: "https://...ssgi2019.pdf; https://...ssgi2024.pdf"
-    """
-    text = str(url or "")
-    parts = re.split(r"[;\n]|,(?=\s*(?:https?://|www\.))", text)
-    return [part.strip() for part in parts if part.strip()]
-
-
 def get_pdf_bytes(source_url):
     """
     Unduh SEMUA kandidat PDF dari source_url, deteksi tahun laporan

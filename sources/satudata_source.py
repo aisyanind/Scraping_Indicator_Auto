@@ -26,6 +26,9 @@ from io import BytesIO
 import openpyxl
 import requests
 
+from sources.bps_utils import parse_number_id as _parse_index_number
+from sources.region_utils import normalize_region
+
 logging.getLogger("openpyxl").setLevel(logging.WARNING)
 
 HEADERS = {
@@ -92,38 +95,6 @@ def _jaccard_score(left, right):
         return 0.0
 
     return len(ltokens & rtokens) / len(union)
-
-
-def _normalize_region(value):
-    text = _normalize_text(value)
-    for old, new in (
-        ("provinsi ", "prov. "),
-        ("prov ", "prov. "),
-        ("kabupaten ", "kab. "),
-        ("kab ", "kab. "),
-    ):
-        if text.startswith(old):
-            text = new + text[len(old):]
-            break
-    if text == "kalimantan selatan":
-        text = "prov. kalimantan selatan"
-    return text
-
-
-def _parse_index_number(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    if "," in text and "." in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif "," in text:
-        text = text.replace(",", ".")
-    try:
-        return float(text)
-    except ValueError:
-        return None
 
 
 def _get_portal_datasets():
@@ -340,7 +311,7 @@ def _resolve_scope(description, wilayah):
         return "KABKOTA"
 
     # Wilayah spesifik yang bukan provinsi default.
-    if wilayah and _normalize_region(wilayah) != _normalize_region(
+    if wilayah and normalize_region(wilayah) != normalize_region(
         PROVINSI_CANONICAL
     ):
         return "SPECIFIC"
@@ -462,10 +433,10 @@ def _value_for_region(all_data, target_region, tahun):
     all_data = {canonical_region: {tahun: nilai}}
     Jika tahun tidak ada, return None (skip).
     """
-    target_norm = _normalize_region(target_region)
+    target_norm = normalize_region(target_region)
 
     for region, year_values in all_data.items():
-        if _normalize_region(region) != target_norm:
+        if normalize_region(region) != target_norm:
             continue
 
         return year_values.get(int(tahun))

@@ -23,6 +23,7 @@ sesuai kebijakan "kalau ga ada ya udah ga ada" provinsi di-skip.
 import requests
 
 from config import REQUEST_HEADERS
+from sources.region_utils import normalize_region, KALSEL_KAB_KOTA
 
 TST_API_URL = (
     "https://sampahnasional.kemenlh.go.id/"
@@ -36,31 +37,11 @@ KALSEL_PROVINSI = [
     "Prov. Kalimantan Selatan",
 ]
 
-KALSEL_KAB_KOTA = [
-    "Kab. Tanah Laut",
-    "Kab. Kotabaru",
-    "Kab. Banjar",
-    "Kab. Barito Kuala",
-    "Kab. Tapin",
-    "Kab. Hulu Sungai Selatan",
-    "Kab. Hulu Sungai Tengah",
-    "Kab. Hulu Sungai Utara",
-    "Kab. Tabalong",
-    "Kab. Tanah Bumbu",
-    "Kab. Balangan",
-    "Kota Banjarmasin",
-    "Kota Banjarbaru",
-]
-
 KALSEL_ALL = KALSEL_PROVINSI + KALSEL_KAB_KOTA
 
 
 class TstUnavailableError(RuntimeError):
     """Data TST tidak tersedia untuk tahun yang diminta."""
-
-
-def _normalize_region(value):
-    return " ".join(str(value or "").strip().lower().split())
 
 
 def _resolve_targets(description, default_wilayah):
@@ -226,10 +207,10 @@ def scrape_tst(
     results = {}
 
     for target in targets:
-        target_norm = _normalize_region(target)
+        target_norm = normalize_region(target)
 
         for kabkota, nilai in available.items():
-            if _normalize_region(kabkota) == target_norm:
+            if normalize_region(kabkota) == target_norm:
                 results[target] = nilai
                 break
 

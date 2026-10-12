@@ -10,6 +10,7 @@ from engine.domain_limiter import ThreadDomainLimiter
 from engine.formula import calculate_formula
 from engine.router import scrape_source_auto
 from models import IndicatorJob
+from sources.region_utils import normalize_region
 
 
 def parse_years(value):
@@ -41,22 +42,6 @@ def _is_mapping(value):
     return isinstance(value, dict)
 
 
-def _region_norm(value):
-    text = " ".join(str(value or "").strip().lower().split())
-
-    for old, new in (
-        ("provinsi ", "prov. "),
-        ("prov ", "prov. "),
-        ("kabupaten ", "kab. "),
-        ("kab ", "kab. "),
-    ):
-        if text.startswith(old):
-            text = new + text[len(old):]
-            break
-
-    return text
-
-
 def _value_for_region(value, region):
     if not _is_mapping(value):
         return value
@@ -64,10 +49,10 @@ def _value_for_region(value, region):
     if region in value:
         return value[region]
 
-    target = _region_norm(region)
+    target = normalize_region(region)
 
     for key, item in value.items():
-        if _region_norm(key) == target:
+        if normalize_region(key) == target:
             return item
 
     return None
@@ -82,7 +67,7 @@ def _regions(default_region, *values):
             continue
 
         for region in value.keys():
-            key = _region_norm(region)
+            key = normalize_region(region)
 
             if key not in seen:
                 seen.add(key)
@@ -166,6 +151,7 @@ def process_indicator_job(job: IndicatorJob):
         (job.sumber_2, job.data_diambil_2),
         (job.sumber_3, job.data_diambil_3),
     ]
+    used_sources = _sources_in_formula(job.rumus)
 
     # Bangun semua kombinasi (tahun, sumber) yang perlu di-scrape.
     tasks = []
@@ -243,7 +229,8 @@ def process_indicator_job(job: IndicatorJob):
                     "message": str(error).splitlines()[0][:300],
                 })
 
-                year_failed[tahun] = True
+                if index + 1 in used_sources:
+                    year_failed[tahun] = True
                 continue
 
             year_statuses[tahun].append(
@@ -264,25 +251,74 @@ def process_indicator_job(job: IndicatorJob):
                 "SUCCESS",
                 "REVIEW",
             }:
-                year_failed[tahun] = True
+                if index + 1 in used_sources:
+                    year_failed[tahun] = True
                 continue
 
             year_values[tahun][index] = (
                 extracted.value
             )
 
+    # Beberapa job mengisi beberapa link tahunan sebagai alternatif sumber,
+    # tetapi tetap memakai rumus default S1. Gunakan sumber berikutnya jika
+    # S1 tidak menyediakan tahun tersebut.
+    formula_text = str(job.rumus or "").strip().upper() or "S1"
+    alternative_source_job = (
+        formula_text == "S1"
+        and any(url for url, _ in source_specs[1:])
+    )
+    if alternative_source_job:
+        for tahun in years:
+            if year_values[tahun][0] is not None:
+                continue
+
+            for index in (1, 2):
+                fallback_value = year_values[tahun][index]
+                if fallback_value is None:
+                    continue
+
+                year_values[tahun][0] = fallback_value
+                year_failed[tahun] = False
+                for diagnostic in diagnostics:
+                    if (
+                        diagnostic.get("tahun") == tahun
+                        and diagnostic.get("source") == 1
+                        and diagnostic.get("status") in {
+                            "NEED_PARSER",
+                            "DATA_TIDAK_ADA",
+                            "LINK_TIDAK_LENGKAP",
+                        }
+                    ):
+                        diagnostic["status"] = "FALLBACK"
+                        diagnostic["message"] = (
+                            "Sumber alternatif dipakai karena Sumber_1 "
+                            f"tidak menyediakan tahun {tahun}."
+                        )
+                break
+
     for tahun in years:
         if any(
             status == "REVIEW"
             for status in year_statuses[tahun]
         ):
+            for region in _regions(wilayah, None, None, None):
+                results.append({
+                    "kode": job.kode,
+                    "nama_indikator": job.nama_indikator,
+                    "wilayah": region,
+                    "tahun": tahun,
+                    "nilai_s1": None,
+                    "nilai_s2": None,
+                    "nilai_s3": None,
+                    "hasil": "-",
+                    "status": "REVIEW",
+                    "error": "",
+                })
             continue
 
         # Formula hanya memakai sumber yang dirujuk Rumus. Sumber lain
         # yang gagal tidak boleh membatalkan tahun ini (mis. Sumber_2
         # hanya pelengkap provinsi untuk indikator tertentu).
-        used_sources = _sources_in_formula(job.rumus)
-
         source_failed = year_failed[tahun]
 
         for slot in used_sources:
@@ -291,6 +327,19 @@ def process_indicator_job(job: IndicatorJob):
                 break
 
         if source_failed:
+            for region in _regions(wilayah, None, None, None):
+                results.append({
+                    "kode": job.kode,
+                    "nama_indikator": job.nama_indikator,
+                    "wilayah": region,
+                    "tahun": tahun,
+                    "nilai_s1": None,
+                    "nilai_s2": None,
+                    "nilai_s3": None,
+                    "hasil": "-",
+                    "status": "DATA_TIDAK_ADA",
+                    "error": "",
+                })
             continue
 
         s1, s2, s3 = year_values[tahun]
@@ -351,19 +400,32 @@ def process_indicator_job(job: IndicatorJob):
     statuses = {
         d.get("status")
         for d in diagnostics
+        if (
+            d.get("source") is None
+            or d.get("source") in used_sources
+        )
     }
 
+    has_success_results = any(
+        result.get("status") == "SUCCESS"
+        for result in results
+    )
+    has_review_results = any(
+        result.get("status") == "REVIEW"
+        for result in results
+    )
+
     if (
-        results
+        has_success_results
         and "REVIEW" not in statuses
-        and "NEED_PARSER" not in statuses
-        and "LINK_TIDAK_LENGKAP" not in statuses
-        and "SUMBER_PERLU_LOGIN" not in statuses
     ):
         final_status = "SUCCESS"
 
-    elif results:
+    elif has_success_results:
         final_status = "PARTIAL"
+
+    elif has_review_results or "REVIEW" in statuses:
+        final_status = "REVIEW"
 
     elif "SUMBER_PERLU_LOGIN" in statuses:
         final_status = "SUMBER_PERLU_LOGIN"
@@ -373,9 +435,6 @@ def process_indicator_job(job: IndicatorJob):
 
     elif "DATA_TIDAK_ADA" in statuses:
         final_status = "DATA_TIDAK_ADA"
-
-    elif "REVIEW" in statuses:
-        final_status = "REVIEW"
 
     else:
         final_status = "NEED_PARSER"

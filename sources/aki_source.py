@@ -15,6 +15,8 @@ from urllib.parse import (
 import pdfplumber
 import requests
 
+from sources.region_utils import normalize_region, normalize_text, KALSEL_KAB_KOTA
+
 
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
@@ -24,42 +26,9 @@ HEADERS = {
 
 PROVINSI_CANONICAL = "Prov. Kalimantan Selatan"
 
-REGION_ALIASES = {
-    "Kalimantan Selatan": "Prov. Kalimantan Selatan",
-    "Kabupaten Tanah Laut": "Kab. Tanah Laut",
-    "Kabupaten Kotabaru": "Kab. Kotabaru",
-    "Kabupaten Banjar": "Kab. Banjar",
-    "Kabupaten Barito Kuala": "Kab. Barito Kuala",
-    "Kabupaten Tapin": "Kab. Tapin",
-    "Kabupaten Hulu Sungai Selatan": "Kab. Hulu Sungai Selatan",
-    "Kabupaten Hulu Sungai Tengah": "Kab. Hulu Sungai Tengah",
-    "Kabupaten Hulu Sungai Utara": "Kab. Hulu Sungai Utara",
-    "Kabupaten Tabalong": "Kab. Tabalong",
-    "Kabupaten Tanah Bumbu": "Kab. Tanah Bumbu",
-    "Kabupaten Balangan": "Kab. Balangan",
-    "Kota Banjarmasin": "Kota Banjarmasin",
-    "Kota Banjarbaru": "Kota Banjarbaru",
-}
-
-KAB_KOTA_SOURCE = (
-    "Kabupaten Tanah Laut",
-    "Kabupaten Kotabaru",
-    "Kabupaten Banjar",
-    "Kabupaten Barito Kuala",
-    "Kabupaten Tapin",
-    "Kabupaten Hulu Sungai Selatan",
-    "Kabupaten Hulu Sungai Tengah",
-    "Kabupaten Hulu Sungai Utara",
-    "Kabupaten Tabalong",
-    "Kabupaten Tanah Bumbu",
-    "Kabupaten Balangan",
-    "Kota Banjarmasin",
-    "Kota Banjarbaru",
-)
-
-CHART_REGION_ORDER = KAB_KOTA_SOURCE + (
+CHART_REGION_ORDER = KALSEL_KAB_KOTA + [
     "Kalimantan Selatan",
-)
+]
 
 # Cache dipisahkan per URL sumber dari Master.
 _ALL_DATA_CACHE = {}
@@ -76,38 +45,10 @@ _FAILED_SOURCES = set()
 _AKI_LOCK = threading.Lock()
 
 
-def _normalize_text(value):
-    return re.sub(
-        r"\s+",
-        " ",
-        str(value or "").strip().lower(),
-    )
-
-
-def _normalize_region(value):
-    text = _normalize_text(value)
-
-    for old, new in (
-        ("provinsi ", "prov. "),
-        ("prov ", "prov. "),
-        ("kabupaten ", "kab. "),
-        ("kab ", "kab. "),
-    ):
-        if text.startswith(old):
-            text = new + text[len(old):]
-            break
-
-    if text == "kalimantan selatan":
-        text = "prov. kalimantan selatan"
-
-    return text
-
-
 def _canonical_region(source_name):
-    return REGION_ALIASES.get(
-        source_name,
-        source_name,
-    )
+    if source_name == "Kalimantan Selatan":
+        return PROVINSI_CANONICAL
+    return source_name
 
 
 def _is_pdf_url(url):
@@ -401,7 +342,7 @@ def _extract_aki_by_region(pdf, report_year):
                     )
 
             if len(page_chart_values) >= len(
-                KAB_KOTA_SOURCE
+                KALSEL_KAB_KOTA
             ):
                 chart_values = page_chart_values
                 break
@@ -411,14 +352,14 @@ def _extract_aki_by_region(pdf, report_year):
     )
 
     if len(chart_values) < len(
-        KAB_KOTA_SOURCE
+        KALSEL_KAB_KOTA
     ):
         return {}
 
     region_order = (
         CHART_REGION_ORDER
         if len(chart_values) >= len(CHART_REGION_ORDER)
-        else KAB_KOTA_SOURCE
+        else KALSEL_KAB_KOTA
     )
 
     chart_values = chart_values[
@@ -649,8 +590,8 @@ def _resolve_targets(
     kab_kota_names = [
         name
         for name in canonical_names
-        if _normalize_region(name)
-        != _normalize_region(
+        if normalize_region(name)
+        != normalize_region(
             PROVINSI_CANONICAL
         )
     ]
@@ -674,12 +615,12 @@ def _value_for_region(
     target_region,
     tahun,
 ):
-    target_norm = _normalize_region(
+    target_norm = normalize_region(
         target_region
     )
 
     for region, year_values in all_data.items():
-        if _normalize_region(region) != target_norm:
+        if normalize_region(region) != target_norm:
             continue
 
         value = year_values.get(

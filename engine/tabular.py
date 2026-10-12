@@ -5,6 +5,8 @@ import pandas as pd
 
 from models import ExtractionResult
 from engine.instructions import Instruction
+from sources.bps_utils import METRIC_SYNONYMS
+from sources.region_utils import normalize_region, normalize_text, REGION_ALIASES
 
 
 REGION_HINTS = {
@@ -12,36 +14,6 @@ REGION_HINTS = {
     "kab/kota", "kabupaten/kota", "daerah", "dati1", "dati2",
 }
 YEAR_HINTS = {"tahun", "year", "periode", "period"}
-
-# Alias wilayah agar sumber dengan penulisan berbeda tetap cocok.
-REGION_ALIASES = {
-    "banjar baru": "banjarbaru",
-    "banjarbaru": "banjarbaru",
-}
-
-
-def normalize_text(value) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip().lower()
-
-
-def normalize_region(value) -> str:
-    text = normalize_text(value)
-    replacements = (
-        ("provinsi ", "prov. "),
-        ("prov ", "prov. "),
-        ("kabupaten ", "kab. "),
-        ("kab ", "kab. "),
-    )
-    for old, new in replacements:
-        if text.startswith(old):
-            text = new + text[len(old):]
-            break
-
-    for alias, canonical in REGION_ALIASES.items():
-        if alias in text:
-            text = text.replace(alias, canonical)
-
-    return text
 
 
 def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -107,12 +79,28 @@ def _find_region_columns(
     return cols
 
 
+def _extract_year_from_column(col_name):
+    text = normalize_text(col_name)
+    m = re.search(r"\b(20\d{2})\b", text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def _metric_score(column: str, terms: list[str]) -> float:
     c = normalize_text(column)
     if not terms:
         return 0.25
 
-    hits = sum(1 for term in terms if term in c)
+    hits = 0
+    for term in terms:
+        if term in c:
+            hits += 1
+            continue
+        synonyms = METRIC_SYNONYMS.get(term, [])
+        if any(syn in c for syn in synonyms):
+            hits += 0.7
+
     return hits / max(len(terms), 1)
 
 
@@ -136,7 +124,7 @@ def _numeric_series(series: pd.Series) -> pd.Series:
                 text = text.replace(",", "")
         elif "," in text:
             text = text.replace(".", "").replace(",", ".")
-        elif re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+", text):
+        elif "." in text:
             text = text.replace(".", "")
 
         try:
@@ -187,12 +175,15 @@ def extract_from_dataframes(
         # (3) yang bukan kolom tahun, (4) metric score tinggi.
         def _candidate_rank(item):
             col = item[0]
-            exact_year = 1 if normalize_text(col) == str(int(tahun)) else 0
+            col_year = _extract_year_from_column(col)
+            exact_year = 1 if col_year == int(tahun) else 0
             is_region = 1 if col in region_cols else 0
             is_year_header = 1 if col in year_header_cols else 0
             is_year = 1 if col in year_cols else 0
+            year_penalty = -1 if col_year and col_year != int(tahun) else 0
             return (
                 -exact_year,
+                year_penalty,
                 -is_region,
                 is_year_header,
                 is_year,
@@ -203,6 +194,10 @@ def extract_from_dataframes(
         numeric_candidates.sort(key=_candidate_rank)
 
         for value_col, numeric_series, metric_score in numeric_candidates:
+            col_year = _extract_year_from_column(value_col)
+            if col_year and col_year != int(tahun):
+                continue
+
             work = df.copy()
             work["__value__"] = numeric_series
 
@@ -222,6 +217,19 @@ def extract_from_dataframes(
 
             region_values = {}
             region_conf = 0.0
+
+            # Prioritas: baris "Total"/"Jumlah" untuk provinsi.
+            total_row_value = None
+            first_col = work.columns[0] if len(work.columns) > 0 else None
+            if first_col is not None:
+                first_col_norm = work[first_col].map(
+                    lambda x: normalize_text(str(x or ""))
+                )
+                total_mask = first_col_norm.isin(["total", "jumlah"])
+                if total_mask.any():
+                    total_vals = work.loc[total_mask, "__value__"].dropna()
+                    if not total_vals.empty:
+                        total_row_value = float(total_vals.iloc[0])
 
             # Wide format: header kolom nilai adalah nama wilayah
             # (mis. kolom "KALIMANTAN SELATAN" berisi nilai per tahun).
@@ -250,24 +258,32 @@ def extract_from_dataframes(
                     target_norm = normalize_region(target)
                     found_value = None
 
-                    for col in region_cols:
-                        normalized = work[col].map(normalize_region)
-                        exact = work[normalized == target_norm]
-                        if exact.empty:
-                            # fallback containment for source labels without prefix
-                            bare = re.sub(r"^(prov\.|kab\.|kota)\s+", "", target_norm)
-                            mask = normalized.str.contains(
-                                re.escape(bare),
-                                regex=True,
-                                na=False,
-                            )
-                            exact = work[mask]
+                    # Cek apakah target adalah provinsi (bukan kab/kota).
+                    is_prov = target_norm.startswith("prov.")
 
-                        if not exact.empty:
-                            values = exact["__value__"].dropna()
-                            if not values.empty:
-                                found_value = float(values.iloc[0])
-                                break
+                    # Jika provinsi dan ada Total row, pakai Total.
+                    if is_prov and total_row_value is not None:
+                        found_value = total_row_value
+
+                    if found_value is None:
+                        for col in region_cols:
+                            normalized = work[col].map(normalize_region)
+                            exact = work[normalized == target_norm]
+                            if exact.empty:
+                                # fallback containment for source labels without prefix
+                                bare = re.sub(r"^(prov\.|kab\.|kota)\s+", "", target_norm)
+                                mask = normalized.str.contains(
+                                    re.escape(bare),
+                                    regex=True,
+                                    na=False,
+                                )
+                                exact = work[mask]
+
+                            if not exact.empty:
+                                values = exact["__value__"].dropna()
+                                if not values.empty:
+                                    found_value = float(values.iloc[0])
+                                    break
 
                     if found_value is not None:
                         region_values[target] = found_value
@@ -282,13 +298,18 @@ def extract_from_dataframes(
                     region_values = {
                         instruction.target_wilayahs[0]: float(values.iloc[0])
                     }
-                    region_conf = 0.10
+                    region_conf = 0.20
+                elif total_row_value is not None:
+                    region_values = {
+                        instruction.target_wilayahs[0]: total_row_value
+                    }
+                    region_conf = 0.25
                 else:
                     continue
 
             confidence = min(
                 1.0,
-                0.25 + metric_score * 0.35 + year_conf + region_conf,
+                0.30 + metric_score * 0.35 + year_conf + region_conf,
             )
 
             candidate = ExtractionResult(

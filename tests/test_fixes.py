@@ -1,10 +1,14 @@
 import json
-import sys
-sys.path.insert(0, "D:\\MagangHub\\Scraping_Indikator_Auto")
+from types import SimpleNamespace
 
-from engine.run_indicator import _sources_in_formula
+from engine.run_indicator import (
+    _sources_in_formula,
+    _is_retryable_status,
+    process_indicator_job,
+)
 from engine.formula import calculate_formula
 from engine.instructions import parse_instruction
+from models import IndicatorJob
 from extractors.discovery import (
     _collect_links,
     _extract_api_templates,
@@ -17,11 +21,15 @@ from sources.generic_auto_extractor import (
 )
 from extractors.pdf import _ocr_line_fallback
 from extractors.flip_pdf import (
+    _annual_snapshot_value,
+    _edition_year,
     _province_summary_value,
     _province_value,
     _table_value,
     _table_years,
+    extract_flip_pdf,
 )
+import extractors.flip_pdf as flip_pdf
 from sources.tst_source import _map_kalsel
 
 
@@ -249,11 +257,10 @@ def test_flip_pdf_explicit_year_and_table_value():
 
 
 def test_flip_pdf_table_years_beyond_sequence():
-    """Deret tahun yang melewati YEAR_SEQUENCE tidak boleh crash."""
-    # 11 tahun: 2015-2024 (sequence penuh) + 2025 -> dulu IndexError.
+    """Deret tahun dibaca dinamis, termasuk tahun setelah 2024."""
     assert _table_years(
         "2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025"
-    ) == list(range(2015, 2025))
+    ) == list(range(2015, 2026))
 
     # Sequence pendek tetap dipetakan ke index tahun yang benar.
     page = (
@@ -262,6 +269,254 @@ def test_flip_pdf_table_years_beyond_sequence():
         "1 tanah laut 178,00 178,00 169,22 TINGGI"
     )
     assert _table_value(page, "Kab. Tanah Laut", 2017) == 169.22
+
+
+def test_flip_pdf_annual_snapshot_2025():
+    """Snapshot IRBI 2025 mengandung nilai provinsi dan kabupaten/kota."""
+    province_table = (
+        "Tabel Indeks Risiko Bencana Tahun 2025 Tingkat Provinsi "
+        "NO PROVINSI SEB 2025 1 ACEH 181,05 192,75 "
+        "22 KALIMANTAN SELATAN 83,79 83,68 "
+        "23 KALIMANTAN TIMUR 114,56 117,73"
+    )
+    county_table = (
+        "NO KABUPATEN/KOTA PROVINSI SKOR KELAS RISIKO "
+        "289 TANAH LAUT KALIMANTAN SELATAN 131,76 SEDANG "
+        "290 BREBES JAWA TENGAH 131,59 SEDANG"
+    )
+
+    assert _annual_snapshot_value(
+        province_table,
+        "Prov. Kalimantan Selatan",
+        2025,
+        True,
+    ) == 83.68
+    assert _annual_snapshot_value(
+        county_table,
+        "Kab. Tanah Laut",
+        2025,
+        False,
+    ) == 131.76
+    assert _edition_year(["IRBI Indeks Risiko Bencana Indonesia Tahun 2025"]) == 2025
+
+
+def test_flip_pdf_reads_province_chart_year(monkeypatch):
+    """Grafik provinsi dipetakan ke tahun dari caption text layer."""
+    pages = [""] * 139
+    pages.append(
+        "Grafik nilai indeks risiko Provinsi Kalimantan Selatan "
+        "dari Tahun 2015 sampai dengan tahun 2023"
+    )
+    image_requests = []
+    chart_values = [
+        151.60, 147.31, 147.31, 145.37, 145.37,
+        144.81, 141.66, 128.81, 129.44,
+    ]
+
+    monkeypatch.setattr(flip_pdf, "_load_pages", lambda _url: pages)
+
+    def fake_ocr(image_url, expected_count):
+        image_requests.append((image_url, expected_count))
+        return chart_values, 0.82
+
+    monkeypatch.setattr(flip_pdf, "_ocr_chart_values", fake_ocr)
+    payload = SimpleNamespace(
+        content=b"Flip PDF Professional",
+        final_url="https://example.test/reports/mobile/index.html",
+        url="https://example.test/reports/mobile/index.html",
+    )
+
+    result = extract_flip_pdf(
+        payload,
+        parse_instruction("Indeks Risiko Bencana Prov. Kalimantan Selatan"),
+        2020,
+    )
+
+    assert result.value == 144.81
+    assert result.source_type == "flip_pdf:province_chart_ocr"
+    assert image_requests == [
+        ("https://example.test/reports/files/mobile/140.jpg", 9)
+    ]
+
+
+def test_retryable_statuses():
+    """Status final tidak di-retry; status transient berhak retry."""
+    for status in ("SUCCESS", "REVIEW", "DATA_TIDAK_ADA", "SUMBER_PERLU_LOGIN"):
+        assert _is_retryable_status(status) is False
+
+    for status in ("NEED_PARSER", "LINK_TIDAK_LENGKAP", "LEGACY_FAILED"):
+        assert _is_retryable_status(status) is True
+
+
+def _make_job(**overrides):
+    base = {
+        "Job_ID": "TEST-1",
+        "Kode": "TEST",
+        "Nama_Indikator": "Indikator Tes",
+        "Tahun": "2024",
+        "Wilayah": "Prov. Kalimantan Selatan",
+        "Sumber_1": "https://example.test/data",
+        "Data_Diambil_1": "indeks Prov. Kalimantan Selatan",
+        "Sumber_2": "",
+        "Data_Diambil_2": "",
+        "Sumber_3": "",
+        "Data_Diambil_3": "",
+        "Rumus": "S1",
+    }
+    base.update(overrides)
+    return IndicatorJob.from_dict(base)
+
+
+class _FakeResult:
+    def __init__(self, status, value=None):
+        self.status = status
+        self.value = value
+        self.confidence = 1.0
+        self.source_type = "html"
+        self.message = "ok"
+        self.evidence = []
+
+
+def test_process_indicator_job_skips_existing_complete_year(monkeypatch):
+    from engine import run_indicator
+
+    calls = []
+
+    def fake_scrape(**kwargs):
+        calls.append(kwargs)
+        return _FakeResult("SUCCESS", value=99.0)
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
+    output = process_indicator_job(
+        _make_job(),
+        existing_results=[{
+            "Kode": "TEST",
+            "Wilayah": "Prov. Kalimantan Selatan",
+            "Tahun": "2024",
+            "Status": "SUCCESS",
+        }],
+    )
+
+    assert calls == []
+    assert output["status"] == "SUCCESS"
+    assert output["results"] == []
+    assert output["diagnostics"][0]["status"] == "SKIPPED_EXISTING"
+
+
+def test_process_indicator_job_scrapes_if_a_requested_region_is_missing(monkeypatch):
+    import config
+    from engine import run_indicator
+
+    calls = []
+
+    def fake_scrape(**kwargs):
+        calls.append(kwargs)
+        return _FakeResult("DATA_TIDAK_ADA")
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
+    regions = config.KALSEL_WILAYAHS[1:]
+    existing_results = [
+        {
+            "Kode": "TEST",
+            "Wilayah": region,
+            "Tahun": "2024",
+            "Status": "SUCCESS",
+        }
+        for region in regions[:-1]
+    ]
+    job = _make_job(
+        Data_Diambil_1="Cakupan: seluruh Kab/Kota di Kalsel"
+    )
+
+    output = process_indicator_job(
+        job,
+        existing_results=existing_results,
+    )
+
+    assert len(calls) == 1
+    assert all(
+        diagnostic["status"] != "SKIPPED_EXISTING"
+        for diagnostic in output["diagnostics"]
+    )
+
+
+def test_process_indicator_job_reports_progress(monkeypatch):
+    """on_progress dipanggil dan memuat teks 'Percobaan N/M'."""
+    import config
+    from engine import run_indicator
+
+    attempts_seen = []
+    messages = []
+
+    def fake_scrape(**kwargs):
+        attempts_seen.append(kwargs["url"])
+        # Gagal 2 kali dulu dengan NEED_PARSER, lalu sukses.
+        if len(attempts_seen) < 3:
+            return _FakeResult("NEED_PARSER")
+        return _FakeResult("SUCCESS", value=42.0)
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
+    monkeypatch.setattr(config, "SCRAPE_RETRY_BACKOFF_MAX", 0)
+
+    # Patch backoff di modul run_indicator (sudah di-import).
+    import time as _time
+    monkeypatch.setattr(_time, "sleep", lambda *_: None)
+
+    job = _make_job()
+    output = process_indicator_job(
+        job,
+        on_progress=lambda info: messages.append(info),
+    )
+
+    assert output["status"] == "SUCCESS"
+    assert len(attempts_seen) == 3
+    assert any("Percobaan 1/" in m["message"] for m in messages)
+    assert any("Percobaan 3/" in m["message"] for m in messages)
+    assert all("progress" in m for m in messages)
+
+
+def test_process_indicator_job_stops_after_max_attempts(monkeypatch):
+    """Setelah MAX_SCRAPE_ATTEMPTS gagal, tidak ada retry lagi."""
+    from engine import run_indicator
+
+    calls = []
+
+    def always_fail(**kwargs):
+        calls.append(1)
+        raise RuntimeError("koneksi putus")
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", always_fail)
+
+    import time as _time
+    monkeypatch.setattr(_time, "sleep", lambda *_: None)
+
+    job = _make_job()
+    output = process_indicator_job(job)
+
+    assert len(calls) == run_indicator.MAX_SCRAPE_ATTEMPTS
+    assert output["status"] == "NEED_PARSER"
+
+
+def test_process_indicator_job_no_retry_on_final_status(monkeypatch):
+    """DATA_TIDAK_ADA tidak di-retry."""
+    from engine import run_indicator
+
+    calls = []
+
+    def no_data(**kwargs):
+        calls.append(1)
+        return _FakeResult("DATA_TIDAK_ADA")
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", no_data)
+
+    import time as _time
+    monkeypatch.setattr(_time, "sleep", lambda *_: None)
+
+    job = _make_job()
+    output = process_indicator_job(job)
+
+    assert len(calls) == 1
+    assert output["status"] == "DATA_TIDAK_ADA"
 
 
 if __name__ == "__main__":
@@ -280,4 +535,12 @@ if __name__ == "__main__":
     test_ocr_line_fallback_returns_review()
     test_flip_pdf_explicit_year_and_table_value()
     test_flip_pdf_table_years_beyond_sequence()
+    test_retryable_statuses()
+    try:
+        import pytest  # noqa: F401
+        # monkeypatch-based tests jalan via pytest.
+    except ImportError:
+        pass
+    else:
+        print("(jalankan monkeypatch tests via: pytest tests/test_fixes.py -q)")
     print("ALL TESTS PASSED")

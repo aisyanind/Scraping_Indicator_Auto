@@ -1,13 +1,18 @@
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 from config import (
     DEFAULT_WILAYAH,
     INNER_CONCURRENCY,
+    MAX_SCRAPE_ATTEMPTS,
     PER_DOMAIN_LIMIT,
+    SCRAPE_RETRY_BACKOFF_MAX,
 )
 from engine.domain_limiter import ThreadDomainLimiter
 from engine.formula import calculate_formula
+from engine.instructions import parse_instruction
 from engine.router import scrape_source_auto
 from models import IndicatorJob
 from sources.region_utils import normalize_region
@@ -138,7 +143,71 @@ def _build_source_context(job, description):
     )
 
 
-def process_indicator_job(job: IndicatorJob):
+def _complete_existing_years(job, years, source_specs, wilayah, records):
+    if not records:
+        return set()
+
+    descriptions = " | ".join(
+        description
+        for _, description in source_specs
+        if str(description or "").strip()
+    )
+    context = _build_source_context(job, descriptions)
+    expected_regions = parse_instruction(
+        context,
+        default_wilayah=wilayah,
+    ).target_wilayahs or [wilayah]
+
+    existing_keys = set()
+    target_kode = str(job.kode or "").strip().casefold()
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("Kode", "")).strip().casefold() != target_kode:
+            continue
+        if str(record.get("Status", "")).strip().upper() != "SUCCESS":
+            continue
+
+        try:
+            tahun = int(float(record.get("Tahun", "")))
+        except (TypeError, ValueError):
+            continue
+
+        region = normalize_region(record.get("Wilayah", ""))
+        if region:
+            existing_keys.add((tahun, region))
+
+    return {
+        tahun
+        for tahun in years
+        if all(
+            (tahun, normalize_region(region)) in existing_keys
+            for region in expected_regions
+        )
+    }
+
+
+# Status hasil scrape yang tidak perlu di-retry: sudah final.
+# NEED_PARSER / LINK_TIDAK_LENGKAP dianggap transient (timeout render,
+# deteksi tabel gagal, dsb.) sehingga berhak retry sampai batas percobaan.
+_NON_RETRYABLE_STATUSES = {
+    "SUCCESS",
+    "REVIEW",
+    "DATA_TIDAK_ADA",
+    "SUMBER_PERLU_LOGIN",
+}
+
+
+def _is_retryable_status(status):
+    return status not in _NON_RETRYABLE_STATUSES
+
+
+def process_indicator_job(
+    job: IndicatorJob,
+    on_progress=None,
+    existing_results=None,
+):
     wilayah = job.wilayah or DEFAULT_WILAYAH
     years = parse_years(job.tahun)
 
@@ -152,10 +221,26 @@ def process_indicator_job(job: IndicatorJob):
         (job.sumber_3, job.data_diambil_3),
     ]
     used_sources = _sources_in_formula(job.rumus)
+    skipped_years = _complete_existing_years(
+        job,
+        years,
+        source_specs,
+        wilayah,
+        existing_results,
+    )
+
+    for tahun in sorted(skipped_years):
+        diagnostics.append({
+            "tahun": tahun,
+            "status": "SKIPPED_EXISTING",
+            "message": "Semua wilayah yang diminta sudah berstatus SUCCESS.",
+        })
 
     # Bangun semua kombinasi (tahun, sumber) yang perlu di-scrape.
     tasks = []
     for tahun in years:
+        if tahun in skipped_years:
+            continue
         for index, (url, description) in enumerate(source_specs):
             if not url:
                 continue
@@ -168,27 +253,99 @@ def process_indicator_job(job: IndicatorJob):
 
             tasks.append((tahun, index, url, description))
 
+    total_tasks = max(1, len(tasks))
+    progress_state = {
+        "done": 0,
+        "current": {},
+    }
+    progress_lock = Lock()
+
+    def _report_progress(message, done=None, current=None):
+        if on_progress is None:
+            return
+
+        with progress_lock:
+            if done is not None:
+                progress_state["done"] = done
+            if current is not None:
+                progress_state["current"] = current
+
+            finished = progress_state["done"]
+            active = progress_state.get("current") or {}
+
+        completed_weight = finished + active.get("weight", 0)
+        percent = 5 + int(90 * min(completed_weight / total_tasks, 1.0))
+
+        try:
+            on_progress({
+                "progress": max(5, min(95, percent)),
+                "message": message,
+            })
+        except Exception:
+            # Progress hanya info; kegagalannya tidak boleh
+            # menggagalkan job.
+            pass
+
     def _scrape_one(task):
         tahun, index, url, description = task
         source_context = _build_source_context(job, description)
+        attempts = max(1, MAX_SCRAPE_ATTEMPTS)
+        last_error = None
+        extracted = None
 
-        try:
-            with limiter(url):
-                extracted = scrape_source_auto(
-                    url=url,
-                    tahun=tahun,
-                    description=source_context,
-                    wilayah=wilayah,
-                    kode=job.kode,
-                    nama_indikator=job.nama_indikator,
-                    sumber_2=job.sumber_2,
-                    sumber_3=job.sumber_3,
+        for attempt in range(1, attempts + 1):
+            label = (
+                f"Percobaan {attempt}/{attempts} — "
+                f"Sumber {index + 1} ({tahun})"
+            )
+
+            with progress_lock:
+                done_now = progress_state["done"]
+
+            _report_progress(
+                label,
+                done=done_now,
+                current={
+                    "weight": (attempt - 1) / attempts,
+                },
+            )
+
+            try:
+                with limiter(url):
+                    extracted = scrape_source_auto(
+                        url=url,
+                        tahun=tahun,
+                        description=source_context,
+                        wilayah=wilayah,
+                        kode=job.kode,
+                        nama_indikator=job.nama_indikator,
+                        sumber_2=job.sumber_2,
+                        sumber_3=job.sumber_3,
+                    )
+
+                last_error = None
+
+                if not _is_retryable_status(extracted.status):
+                    break
+
+            except Exception as error:
+                last_error = error
+                extracted = None
+
+            if attempt < attempts:
+                # Backoff singkat; total tetap dibatasi JOB_TIMEOUT_SECONDS.
+                time.sleep(
+                    min(2 * attempt, SCRAPE_RETRY_BACKOFF_MAX)
                 )
 
-            return tahun, index, extracted, None
+        with progress_lock:
+            progress_state["done"] += 1
+            progress_state["current"] = {}
 
-        except Exception as error:
-            return tahun, index, None, error
+        if last_error is not None:
+            return tahun, index, None, last_error
+
+        return tahun, index, extracted, None
 
     year_values = {
         tahun: [None, None, None]
@@ -297,6 +454,9 @@ def process_indicator_job(job: IndicatorJob):
                 break
 
     for tahun in years:
+        if tahun in skipped_years:
+            continue
+
         if any(
             status == "REVIEW"
             for status in year_statuses[tahun]
@@ -415,7 +575,10 @@ def process_indicator_job(job: IndicatorJob):
         for result in results
     )
 
-    if (
+    if years and all(tahun in skipped_years for tahun in years):
+        final_status = "SUCCESS"
+
+    elif (
         has_success_results
         and "REVIEW" not in statuses
     ):

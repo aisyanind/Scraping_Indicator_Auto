@@ -35,6 +35,12 @@ PER_DOMAIN_LIMIT = int(os.getenv("PER_DOMAIN_LIMIT", "1"))
 APPS_SCRIPT_CONCURRENCY = int(os.getenv("APPS_SCRIPT_CONCURRENCY", "2"))
 INNER_CONCURRENCY = int(os.getenv("INNER_CONCURRENCY", "3"))
 
+# Retry scraping per sumber per indikator (job-level).
+# Timeout job tetap diatur JOB_TIMEOUT_SECONDS; backoff sengaja
+# dibuat pendek supaya 5 percobaan masih muat di dalam budget waktu.
+MAX_SCRAPE_ATTEMPTS = int(os.getenv("MAX_SCRAPE_ATTEMPTS", "5"))
+SCRAPE_RETRY_BACKOFF_MAX = int(os.getenv("SCRAPE_RETRY_BACKOFF_MAX", "8"))
+
 # OCR hanya dipakai sebagai fallback terakhir untuk PDF scan/gambar.
 OCR_ENABLED = os.getenv("OCR_ENABLED", "true").lower() not in {
     "0", "false", "no",

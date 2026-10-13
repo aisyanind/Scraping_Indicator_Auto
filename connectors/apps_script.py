@@ -205,6 +205,21 @@ def get_pending_jobs():
     return data.get("data", [])
 
 
+def get_existing_results(kode):
+    data = _request_json(
+        "GET",
+        params={
+            "action": "existing_results",
+            "token": APPS_SCRIPT_TOKEN,
+            "kode": str(kode or "").strip(),
+            "_ts": str(int(time.time() * 1000)),
+        },
+        timeout=GET_TIMEOUT,
+    )
+
+    return data.get("data", [])
+
+
 def update_job(
     job_id,
     status,

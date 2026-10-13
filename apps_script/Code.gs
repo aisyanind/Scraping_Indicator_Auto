@@ -5,6 +5,13 @@ const CONFIG = {
   JOB_SHEET: 'Scraping_Jobs_Test'
 };
 
+// Sheet Rekap di spreadsheet dashboard (katalog resmi ~80 indikator).
+// Kolom A = kode, kolom B = nama, data mulai baris 4.
+const REKAP_SHEET_ID =
+  '1HQy4V3RyJsuEDAlZ_Qro2oGlCgO-fv3s';
+const REKAP_SHEET_NAME = 'Rekap';
+const REKAP_DATA_START_ROW = 4;
+
 const WILAYAH_ORDER = [
   'Prov. Kalimantan Selatan',
   'Kab. Tanah Laut',
@@ -89,6 +96,13 @@ function doGet(e) {
     return json_({
       success: true,
       data: getPendingJobs_()
+    });
+  }
+
+  if (action === 'existing_results') {
+    return json_({
+      success: true,
+      data: getSuccessfulResultsByKode_(e.parameter.kode)
     });
   }
 
@@ -348,6 +362,13 @@ function submitIndicator(form) {
 
     SpreadsheetApp.flush();
 
+    // Master bertambah — katalog indikator perlu dibaca ulang.
+    try {
+      CacheService.getScriptCache().remove(CATALOG_CACHE_KEY);
+    } catch (e) {
+      // cache best-effort
+    }
+
     return {
       success: true,
       job_id: jobId,
@@ -554,6 +575,12 @@ function deleteIndicator(kode) {
     deletedResult = removeMatching(result, 0);
     deletedJobs = removeMatching(jobs, 2);
 
+    try {
+      CacheService.getScriptCache().remove(CATALOG_CACHE_KEY);
+    } catch (e) {
+      // cache best-effort
+    }
+
     return {
       success: true,
       kode: target,
@@ -683,6 +710,35 @@ function updateJob_(jobId, status, progress, error, diagnostics) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+function getSuccessfulResultsByKode_(kode) {
+  const targetKode = String(kode || '').trim();
+
+  if (!targetKode) {
+    return [];
+  }
+
+  const sheet = ensureSheet_(
+    SpreadsheetApp.getActiveSpreadsheet(),
+    CONFIG.RESULT_SHEET,
+    RESULT_HEADERS
+  );
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow <= 1) {
+    return [];
+  }
+
+  return sheet
+    .getRange(2, 1, lastRow - 1, RESULT_HEADERS.length)
+    .getDisplayValues()
+    .map(row => objectFromRow_(RESULT_HEADERS, row))
+    .filter(row => (
+      String(row.Kode || '').trim() === targetKode
+      && String(row.Status || '').trim().toUpperCase() === 'SUCCESS'
+    ));
 }
 
 
@@ -1104,6 +1160,218 @@ function getDashboardData(filterKode) {
     worker_alive: secondsSince < 30,
     worker_heartbeat_ts: secondsSince
   };
+}
+
+
+/* =====================================================
+   KATALOG INDIKATOR & SUMBER (untuk dropdown form)
+===================================================== */
+
+const CATALOG_CACHE_KEY = 'indicator_catalog_v1';
+const CATALOG_CACHE_SECONDS = 300;
+
+function isIndicatorCode_(value) {
+  if (value === null || value === undefined) return false;
+  const text = String(value).trim();
+  if (!text) return false;
+  const clean = text.replace(/\.$/, '');
+  if (!/[a-zA-Z0-9]/.test(clean)) return false;
+  return /^[a-zA-Z0-9.-]+$/.test(text);
+}
+
+function readMasterObjects_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const master = ensureSheet_(ss, CONFIG.MASTER_SHEET, MASTER_HEADERS);
+
+  if (master.getLastRow() < 2) {
+    return [];
+  }
+
+  // Kode sering berubah jadi tanggal; paksa baca sebagai teks.
+  master.getRange('A:A').setNumberFormat('@');
+
+  const values = master
+    .getRange(2, 1, master.getLastRow() - 1, MASTER_HEADERS.length)
+    .getDisplayValues();
+
+  return values.map(row => objectFromRow_(MASTER_HEADERS, row));
+}
+
+function readRekapIndicators_() {
+  let list = [];
+
+  try {
+    const ss = SpreadsheetApp.openById(REKAP_SHEET_ID);
+    const sheet = ss.getSheetByName(REKAP_SHEET_NAME);
+
+    if (!sheet || sheet.getLastRow() < REKAP_DATA_START_ROW) {
+      return list;
+    }
+
+    const lastRow = sheet.getLastRow();
+    const values = sheet
+      .getRange(REKAP_DATA_START_ROW, 1, lastRow - REKAP_DATA_START_ROW + 1, 2)
+      .getDisplayValues();
+
+    for (let i = 0; i < values.length; i++) {
+      const kode = String(values[i][0] || '').trim();
+      const nama = String(values[i][1] || '').trim();
+
+      if (!isIndicatorCode_(kode)) continue;
+
+      list.push({kode: kode, nama: nama || kode});
+    }
+  } catch (error) {
+    // Rekap opsional — gagal akses tidak boleh merusak katalog Master.
+    console.warn('Gagal membaca Rekap: ' + error);
+  }
+
+  return list;
+}
+
+/**
+ * Katalog indikator untuk dropdown form:
+ * digabung dari Master (riwayat submit) + Rekap (katalog resmi).
+ * Dedupe by kode; nama Rekap menang bila keduanya ada.
+ */
+function getIndicatorCatalog() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(CATALOG_CACHE_KEY);
+
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      // lanjut baca ulang
+    }
+  }
+
+  const byKode = {};
+
+  // Master dulu (riwayat) — nama bisa ditimpa Rekap di bawah.
+  const masterRows = readMasterObjects_();
+  for (let i = masterRows.length - 1; i >= 0; i--) {
+    const row = masterRows[i];
+    const kode = String(row.Kode || '').trim();
+    if (!isIndicatorCode_(kode)) continue;
+    if (!byKode[kode]) {
+      byKode[kode] = {
+        kode: kode,
+        nama: String(row.Nama_Indikator || '').trim() || kode
+      };
+    }
+  }
+
+  // Rekap menimpa nama dengan nama resmi.
+  const rekapList = readRekapIndicators_();
+  for (let i = 0; i < rekapList.length; i++) {
+    const item = rekapList[i];
+    if (byKode[item.kode]) {
+      byKode[item.kode].nama = item.nama;
+    } else {
+      byKode[item.kode] = {kode: item.kode, nama: item.nama};
+    }
+  }
+
+  const indicators = Object.keys(byKode).map(k => byKode[k]);
+
+  indicators.sort((a, b) =>
+    a.kode.localeCompare(b.kode, 'id', {numeric: true, sensitivity: 'base'})
+  );
+
+  const payload = {success: true, indicators: indicators};
+
+  try {
+    cache.put(CATALOG_CACHE_KEY, JSON.stringify(payload), CATALOG_CACHE_SECONDS);
+  } catch (e) {
+    // cache best-effort
+  }
+
+  return payload;
+}
+
+function normalizeSourceUrl_(url) {
+  return String(url || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+function stripScopeHint_(text) {
+  return String(text || '').replace(/\s*\|\s*Cakupan:\s*.*$/i, '').trim();
+}
+
+/**
+ * Riwayat sumber (URL + deskripsi) untuk satu kode indikator.
+ * Dipakai datalist di form; user tetap bisa ketik link baru.
+ */
+function getSourceCatalog(kode) {
+  const target = String(kode || '').trim();
+
+  if (!target) {
+    return {success: true, kode: '', sources: []};
+  }
+
+  const rows = readMasterObjects_();
+  const byUrl = {};
+
+  // Iterasi dari bawah: baris terbaru menang untuk deskripsi.
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    const rowKode = String(row.Kode || '').trim();
+    if (rowKode !== target) continue;
+
+    for (let slot = 1; slot <= 3; slot++) {
+      const url = String(row['Sumber_' + slot] || '').trim();
+      if (!url) continue;
+
+      const key = normalizeSourceUrl_(url);
+      if (!key || byUrl[key]) continue;
+
+      byUrl[key] = {
+        url: url,
+        desc: stripScopeHint_(row['Data_Diambil_' + slot] || '')
+      };
+    }
+  }
+
+  const sources = Object.keys(byUrl).map(k => byUrl[k]);
+
+  return {success: true, kode: target, sources: sources};
+}
+
+
+/**
+ * Ambil input submission terakhir untuk satu kode indikator.
+ * Dipakai tombol "Scrap Lagi" untuk mengisi ulang form.
+ */
+function getLatestMasterInput(kode) {
+  const target = String(kode || '').trim();
+  if (!target) {
+    return {success: false, error: 'Kode kosong.'};
+  }
+
+  const rows = readMasterObjects_();
+
+  // Iterasi dari bawah: baris terbaru menang.
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (String(row.Kode || '').trim() !== target) continue;
+
+    return {
+      success: true,
+      kode: target,
+      nama: String(row.Nama_Indikator || '').trim(),
+      tahun: String(row.Tahun || '').trim(),
+      wilayah: String(row.Wilayah || '').trim(),
+      sumber_1: String(row.Sumber_1 || '').trim(),
+      sumber_2: String(row.Sumber_2 || '').trim(),
+      sumber_3: String(row.Sumber_3 || '').trim(),
+      rumus: String(row.Rumus || 'S1').trim()
+    };
+  }
+
+  return {success: false, error: 'Belum ada submission untuk kode ' + target + '.'};
 }
 
 

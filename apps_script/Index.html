@@ -172,6 +172,42 @@
       color: var(--ink);
     }
 
+    .collapsible-card .card-header.clickable {
+      cursor: pointer;
+      user-select: none;
+      margin-bottom: 0;
+      transition: color var(--transition);
+    }
+
+    .collapsible-card .card-header.clickable:hover h2 {
+      color: var(--orange-darker);
+    }
+
+    .collapsible-card .section-chev {
+      margin-left: auto;
+      font-size: var(--fs-sm);
+      color: var(--ink-soft);
+      transition: transform var(--transition);
+      line-height: 1;
+    }
+
+    .collapsible-card .card-header.clickable:hover .section-chev {
+      color: var(--orange-darker);
+    }
+
+    .collapsible-card #jobsSectionBody {
+      padding-top: var(--space-lg);
+      transition: opacity var(--transition);
+    }
+
+    .collapsible-card.collapsed .section-chev {
+      transform: rotate(-90deg);
+    }
+
+    .collapsible-card.collapsed #jobsSectionBody {
+      display: none;
+    }
+
     .card-header .badge-count {
       margin-left: auto;
       background: var(--orange-tint);
@@ -281,6 +317,58 @@
 
     .source-block:hover {
       border-color: var(--orange-tint-strong);
+    }
+
+    .source-history {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+    }
+
+    .source-history-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      max-width: 280px;
+      padding: var(--space-sm) var(--space-md);
+      background: var(--orange-tint);
+      border: 1px solid var(--orange-tint-strong);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+    }
+
+    .source-history-chip:hover {
+      background: var(--orange-tint-strong);
+      border-color: var(--orange);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .source-history-chip .chip-title {
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--orange-darker);
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .source-history-chip .chip-url {
+      font-size: var(--fs-xs);
+      color: var(--ink-soft);
+      word-break: break-all;
+      line-height: 1.3;
+      max-width: 100%;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
     }
 
     .source-remove {
@@ -511,48 +599,84 @@
       gap: var(--space-sm);
     }
 
-    .job {
+    .job-card {
       border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: var(--space-md) var(--space-lg);
+      border-radius: var(--radius-lg);
+      background: white;
+      overflow: hidden;
+      transition: box-shadow var(--transition), border-color var(--transition);
+    }
+
+    .job-card:hover {
+      box-shadow: var(--shadow-sm);
+      border-color: var(--orange-tint-strong);
+    }
+
+    .job-head {
       display: flex;
-      justify-content: space-between;
       align-items: center;
       gap: var(--space-md);
-      font-size: var(--fs-base);
-      background: white;
-      transition: border-color var(--transition), box-shadow var(--transition);
+      padding: var(--space-md) var(--space-lg);
+      cursor: pointer;
+      user-select: none;
+      background: linear-gradient(180deg, #FFFDFB 0%, #FFF7EF 100%);
+      transition: background var(--transition);
     }
 
-    .job:hover {
-      border-color: var(--orange-tint-strong);
-      box-shadow: var(--shadow-sm);
+    .job-head:hover {
+      background: var(--orange-tint);
     }
 
-    .job-info {
+    .job-head .chev {
+      width: 24px;
+      height: 24px;
+      flex: 0 0 24px;
+      border-radius: var(--radius-sm);
+      background: var(--orange-tint-strong);
+      color: var(--orange-darker);
       display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-
-    .job-info .code {
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
       font-weight: 700;
-      font-size: var(--fs-md);
-      color: var(--ink);
+      transition: transform var(--transition);
     }
 
-    .job-info .id {
+    .job-card.collapsed .job-head .chev {
+      transform: rotate(-90deg);
+    }
+
+    .job-head .code {
+      flex: 0 0 auto;
+      font-weight: 700;
+      font-size: var(--fs-sm);
+      color: var(--orange-darker);
+      background: var(--orange-tint);
+      border: 1px solid var(--orange-tint-strong);
+      border-radius: var(--radius-sm);
+      padding: 4px 8px;
+      min-width: 40px;
+      text-align: center;
+    }
+
+    .job-head .jid {
+      flex: 1;
       font-size: var(--fs-xs);
       color: var(--ink-soft);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       word-break: break-all;
     }
 
-    .job-actions {
+    .job-head .summary {
+      flex: 0 0 auto;
       display: flex;
       align-items: center;
       gap: var(--space-sm);
-      flex-shrink: 0;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .job-progress {
@@ -561,11 +685,16 @@
       display: flex;
       align-items: center;
       gap: var(--space-xs);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .progress-bar {
       width: 60px;
       height: 6px;
+      flex: 0 0 60px;
       background: var(--orange-tint);
       border-radius: 999px;
       overflow: hidden;
@@ -580,6 +709,54 @@
 
     .progress-bar .fill.green { background: var(--green); }
     .progress-bar .fill.red { background: var(--red); }
+
+    .job-body {
+      display: block;
+      padding: var(--space-md) var(--space-lg) var(--space-lg);
+      border-top: 1px solid var(--border);
+      font-size: var(--fs-sm);
+      color: var(--ink);
+    }
+
+    .job-card.collapsed .job-body {
+      display: none;
+    }
+
+    .job-body .job-error-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--red-tint);
+      border-radius: var(--radius-sm);
+      padding: var(--space-sm) var(--space-md);
+      margin-bottom: var(--space-sm);
+      line-height: 1.5;
+    }
+
+    .job-body .job-diag {
+      background: var(--yellow-tint);
+      border-radius: var(--radius-sm);
+      padding: var(--space-sm) var(--space-md);
+    }
+
+    .job-body .job-diag .diag-row {
+      display: block;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .job-body .job-diag .diag-row:last-child {
+      border-bottom: none;
+    }
+
+    .job-body .job-diag .diag-meta {
+      font-weight: 600;
+      color: var(--ink-soft);
+    }
+
+    .job-body .job-empty {
+      color: var(--ink-faint);
+      font-style: italic;
+    }
 
     /* ====== INDICATOR CARDS ====== */
 
@@ -752,6 +929,26 @@
     .legend .lg-s::before { background: var(--green-tint); border: 1px solid var(--green); }
     .legend .lg-r::before { background: var(--orange-tint-strong); border: 1px solid var(--orange); }
     .legend .lg-e::before { background: #F3EDE6; border: 1px dashed var(--ink-faint); }
+
+    /* ====== SCRAP AGAIN BUTTON ====== */
+
+    .scrap-again-btn {
+      background: var(--orange-tint);
+      border: 1px solid var(--orange-tint-strong);
+      color: var(--orange-darker);
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      margin-right: 4px;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .scrap-again-btn:hover {
+      background: var(--orange-tint-strong);
+      border-color: var(--orange);
+    }
 
     /* ====== DELETE BUTTON ====== */
 
@@ -955,13 +1152,18 @@
         justify-content: flex-start;
       }
 
-      .job {
-        flex-direction: column;
-        align-items: stretch;
+      .job-head {
+        flex-wrap: wrap;
       }
 
-      .job-actions {
-        justify-content: space-between;
+      .job-head .jid {
+        order: 10;
+        flex-basis: 100%;
+      }
+
+      .job-head .summary {
+        width: 100%;
+        justify-content: flex-start;
       }
 
       .topbar {
@@ -991,7 +1193,7 @@
     }
 
     @media print {
-      .topbar, .card:first-child, .toolbar, .delete-btn, .job-actions button { display: none; }
+      .topbar, .card:first-child, .toolbar, .delete-btn, .scrap-again-btn, .job-head .stop-btn { display: none; }
       .card { box-shadow: none; border: 1px solid #ddd; page-break-inside: avoid; }
       .indicator-body { max-height: none; overflow: visible; }
     }
@@ -1023,7 +1225,7 @@
   <div id="toastContainer" role="alert" aria-live="polite"></div>
 
   <!-- ====== FORM CARD ====== -->
-  <div class="card">
+  <div class="card" id="formCard">
     <div class="card-header">
       <div class="icon orange">+</div>
       <h2>Tambah Indikator</h2>
@@ -1031,14 +1233,14 @@
 
     <div class="grid">
 
-      <div>
-        <label for="kode">Kode</label>
-        <input id="kode" placeholder="Contoh: 3.2">
-      </div>
-
-      <div>
-        <label for="nama_indikator">Nama Indikator</label>
-        <input id="nama_indikator" placeholder="Contoh: Indeks Daya Saing Daerah">
+      <div class="full">
+        <label for="indikator_pilih">Pilih Indikator</label>
+        <select id="indikator_pilih" onchange="handleIndikatorPilih()">
+          <option value="">— Pilih indikator —</option>
+        </select>
+        <input type="hidden" id="kode">
+        <input type="hidden" id="nama_indikator">
+        <div class="hint">Kode &amp; nama terisi otomatis dari daftar indikator.</div>
       </div>
 
       <div class="full">
@@ -1090,13 +1292,15 @@
         <div class="source-block" data-index="1">
           <div class="full">
             <label for="sourceUrl1">Sumber 1</label>
-            <input class="source-url" id="sourceUrl1" placeholder="https://&hellip;">
-          </div>
-          <div class="full">
-            <label for="sourceDesc1">Ambil Data 1</label>
-            <textarea class="source-desc" id="sourceDesc1" placeholder="Deskripsi data yang akan diambil"></textarea>
+            <input class="source-url" id="sourceUrl1" placeholder="https://&hellip; atau klik link riwayat di bawah">
           </div>
         </div>
+      </div>
+
+      <div class="full hidden" id="sourceHistoryBox">
+        <label>Link yang pernah dipakai indikator ini</label>
+        <div id="sourceHistory" class="source-history"></div>
+        <div class="hint">Klik link untuk mengisi kolom Sumber. Bisa juga ketik link baru manual.</div>
       </div>
 
       <div class="full">
@@ -1161,12 +1365,15 @@
   </div>
 
   <!-- ====== JOBS CARD ====== -->
-  <div class="card">
-    <div class="card-header">
+  <div class="card collapsible-card" id="jobsCard">
+    <div class="card-header clickable" onclick="toggleJobsSection()">
       <div class="icon green">&#9881;</div>
-      <h2>10 Job Terakhir</h2>
+      <h2>Monitoring Progress</h2>
+      <span class="section-chev" id="jobsSectionChev">&#9660;</span>
     </div>
-    <div id="jobsContainer" class="job-list">Memuat job&hellip;</div>
+    <div id="jobsSectionBody">
+      <div id="jobsContainer" class="job-list">Memuat job&hellip;</div>
+    </div>
   </div>
 
   <!-- ====== DELETE CONFIRM MODAL ====== -->
@@ -1219,6 +1426,10 @@ WILAYAH_ORDER.forEach(function(name, index) {
 var _confirmCallback = null;
 var LAST_ROWS = [];
 var COLLAPSED_STATE = {};
+var EXPANDED_ERRORS = {};
+// null = user belum pernah klik header Monitoring Progress (auto-control).
+// true/false = pilihan manual user, menang atas auto.
+var JOBS_SECTION_COLLAPSED = null;
 var _filterTimer = null;
 
 function value(id) {
@@ -1383,6 +1594,11 @@ function submitForm() {
     return;
   }
 
+  if (!value('kode') || !value('nama_indikator')) {
+    setFormStatus('Pilih indikator terlebih dahulu.', 'error');
+    return;
+  }
+
   var data = {
     kode: value('kode'),
     nama_indikator: value('nama_indikator'),
@@ -1395,7 +1611,7 @@ function submitForm() {
   document.querySelectorAll('#sourceContainer .source-block').forEach(function(block, index) {
     var slot = index + 1;
     data['sumber_' + slot] = block.querySelector('.source-url').value.trim();
-    data['data_diambil_' + slot] = block.querySelector('.source-desc').value.trim();
+    data['data_diambil_' + slot] = '';
   });
 
   var btn = document.getElementById('submitBtn');
@@ -1420,6 +1636,7 @@ function submitForm() {
 /* ====== SOURCE BLOCKS ====== */
 
 var MAX_SOURCES = 3;
+var SOURCE_CATALOG = [];
 
 function addSource() {
   var container = document.getElementById('sourceContainer');
@@ -1433,9 +1650,7 @@ function addSource() {
   block.innerHTML =
     '<button class="source-remove" type="button" onclick="removeSource(this)">&times; Hapus sumber</button>'
     + '<div class="full"><label for="sourceUrl' + next + '">Sumber ' + next + '</label>'
-    + '<input class="source-url" id="sourceUrl' + next + '" placeholder="https://&hellip;"></div>'
-    + '<div class="full"><label for="sourceDesc' + next + '">Ambil Data ' + next + '</label>'
-    + '<textarea class="source-desc" id="sourceDesc' + next + '" placeholder="Deskripsi data"></textarea></div>';
+    + '<input class="source-url" id="sourceUrl' + next + '" placeholder="https://&hellip; atau klik link riwayat di bawah"></div>';
   container.appendChild(block);
   updateAddSourceButton();
 }
@@ -1454,12 +1669,12 @@ function renumberSources() {
     var n = index + 1;
     block.dataset.index = String(n);
     var labels = block.querySelectorAll('label');
-    if (labels[0]) { labels[0].textContent = 'Sumber ' + n; labels[0].setAttribute('for', 'sourceUrl' + n); }
-    if (labels[1]) { labels[1].textContent = 'Ambil Data ' + n; labels[1].setAttribute('for', 'sourceDesc' + n); }
+    if (labels[0]) {
+      labels[0].textContent = 'Sumber ' + n;
+      labels[0].setAttribute('for', 'sourceUrl' + n);
+    }
     var inputs = block.querySelectorAll('input.source-url');
     if (inputs[0]) inputs[0].id = 'sourceUrl' + n;
-    var textareas = block.querySelectorAll('textarea.source-desc');
-    if (textareas[0]) textareas[0].id = 'sourceDesc' + n;
   });
 }
 
@@ -1467,6 +1682,136 @@ function updateAddSourceButton() {
   var count = document.getElementById('sourceContainer').querySelectorAll('.source-block').length;
   var btn = document.getElementById('addSourceBtn');
   if (btn) btn.style.display = count >= MAX_SOURCES ? 'none' : 'inline-block';
+}
+
+/* ====== INDICATOR & SOURCE CATALOG ====== */
+
+function loadIndicatorCatalog() {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) return;
+      populateIndicatorSelect(result.indicators || []);
+    })
+    .withFailureHandler(function() {
+      // Form tetap bisa dipakai; select hanya berisi placeholder.
+    })
+    .getIndicatorCatalog();
+}
+
+function populateIndicatorSelect(indicators) {
+  var select = document.getElementById('indikator_pilih');
+  var previous = select.value;
+  select.innerHTML = '<option value="">— Pilih indikator —</option>';
+
+  indicators.forEach(function(item) {
+    var opt = document.createElement('option');
+    opt.value = item.kode;
+    opt.textContent = item.kode + ' — ' + item.nama;
+    opt.setAttribute('data-nama', item.nama);
+    select.appendChild(opt);
+  });
+
+  if (previous) select.value = previous;
+}
+
+function handleIndikatorPilih() {
+  var select = document.getElementById('indikator_pilih');
+  var selected = select.options[select.selectedIndex];
+  var kode = select.value;
+  var nama = selected ? (selected.getAttribute('data-nama') || '') : '';
+
+  document.getElementById('kode').value = kode;
+  document.getElementById('nama_indikator').value = nama;
+
+  loadSourceCatalog(kode);
+}
+
+function loadSourceCatalog(kode) {
+  var box = document.getElementById('sourceHistoryBox');
+  if (!kode) {
+    SOURCE_CATALOG = [];
+    if (box) box.classList.add('hidden');
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) {
+        SOURCE_CATALOG = [];
+      } else {
+        SOURCE_CATALOG = result.sources || [];
+      }
+      renderSourceHistory();
+    })
+    .withFailureHandler(function() {
+      SOURCE_CATALOG = [];
+      renderSourceHistory();
+    })
+    .getSourceCatalog(kode);
+}
+
+function shortenUrl(url) {
+  var text = String(url || '').trim();
+  text = text.replace(/^https?:\/\//i, '');
+  if (text.length > 70) {
+    text = text.slice(0, 67) + '…';
+  }
+  return text;
+}
+
+function renderSourceHistory() {
+  var box = document.getElementById('sourceHistoryBox');
+  var container = document.getElementById('sourceHistory');
+  if (!box || !container) return;
+
+  if (!SOURCE_CATALOG.length) {
+    box.classList.add('hidden');
+    return;
+  }
+
+  box.classList.remove('hidden');
+
+  container.innerHTML = SOURCE_CATALOG.map(function(item, index) {
+    var desc = String(item.desc || '').trim();
+    var url = String(item.url || '').trim();
+    var title = desc || shortenUrl(url);
+    var sub = desc ? shortenUrl(url) : '';
+
+    return '<button type="button" class="source-history-chip" '
+      + 'onclick="pickSourceHistory(' + index + ')" '
+      + 'title="' + escapeAttr(url) + '">'
+      + '<span class="chip-title">' + escapeHtml(title) + '</span>'
+      + (sub ? '<span class="chip-url">' + escapeHtml(sub) + '</span>' : '')
+      + '</button>';
+  }).join('');
+}
+
+function pickSourceHistory(index) {
+  var item = SOURCE_CATALOG[index];
+  if (!item || !item.url) return;
+
+  // Isi kolom Sumber pertama yang masih kosong;
+  // kalau semua terisi, timpa Sumber 1.
+  var blocks = document.querySelectorAll('#sourceContainer .source-block');
+  var target = null;
+
+  for (var i = 0; i < blocks.length; i++) {
+    var input = blocks[i].querySelector('.source-url');
+    if (input && !String(input.value || '').trim()) {
+      target = input;
+      break;
+    }
+  }
+
+  if (!target && blocks[0]) {
+    target = blocks[0].querySelector('.source-url');
+  }
+
+  if (target) {
+    target.value = item.url;
+    target.focus();
+    showToast('Link diisi ke kolom Sumber.', 'success');
+  }
 }
 
 /* ====== DASHBOARD ====== */
@@ -1627,6 +1972,7 @@ function indicatorCardHtml(group) {
     + '<span class="summary">'
     + '<span class="badge">' + filled + '/' + total + '</span>'
     + summaryStatus + '</span>'
+    + '<button class="scrap-again-btn" onclick="event.stopPropagation(); scrapLagi(\'' + escapeAttr(group.kode) + '\')">Scrap Lagi</button>'
     + '<button class="delete-btn" onclick="event.stopPropagation(); confirmDeleteIndicator(\'' + escapeAttr(group.kode) + '\',\'' + escapeAttr(group.nama) + '\')">Hapus</button>'
     + '</div>'
     + '<div class="indicator-body"><div class="pivot-wrap"><table class="pivot"><thead><tr>' + thead + '</tr></thead><tbody>' + tbody + '</tbody></table></div>'
@@ -1641,6 +1987,128 @@ function hashString(text) {
     hash |= 0;
   }
   return hash;
+}
+
+/* ====== SCRAP LAGI ====== */
+
+function scrapLagi(kode) {
+  if (!kode) return;
+
+  setFormStatus('Memuat input terakhir...', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) {
+        setFormStatus(result && result.error ? result.error : 'Data tidak ditemukan.', 'error');
+        return;
+      }
+      fillFormFromMaster(result);
+    })
+    .withFailureHandler(function(error) {
+      setFormStatus('Gagal memuat input: ' + error.message, 'error');
+    })
+    .getLatestMasterInput(kode);
+}
+
+function fillFormFromMaster(input) {
+  var select = document.getElementById('indikator_pilih');
+  var found = false;
+
+  // Pastikan kode sudah ada di dropdown; kalau belum, tambahkan sementara.
+  for (var i = 0; i < select.options.length; i++) {
+    if (select.options[i].value === input.kode) {
+      select.selectedIndex = i;
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    var opt = document.createElement('option');
+    opt.value = input.kode;
+    opt.textContent = input.kode + ' — ' + (input.nama || input.kode);
+    opt.setAttribute('data-nama', input.nama || '');
+    select.appendChild(opt);
+    select.value = input.kode;
+  }
+
+  handleIndikatorPilih();
+
+  // Isi sumber: tambah block dulu kalau perlu.
+  var sumberList = [input.sumber_1, input.sumber_2, input.sumber_3].filter(function(s) {
+    return String(s || '').trim();
+  });
+
+  // Reset ke 1 block dulu.
+  var container = document.getElementById('sourceContainer');
+  while (container.querySelectorAll('.source-block').length > 1) {
+    container.querySelector('.source-block:last-child').remove();
+  }
+
+  // Tambah block sesuai jumlah sumber.
+  while (container.querySelectorAll('.source-block').length < sumberList.length) {
+    addSource();
+  }
+
+  var blocks = container.querySelectorAll('.source-block');
+  for (var j = 0; j < blocks.length; j++) {
+    var inputEl = blocks[j].querySelector('.source-url');
+    if (inputEl) inputEl.value = sumberList[j] || '';
+  }
+
+  // Rumus.
+  document.getElementById('rumus').value = input.rumus || 'S1';
+
+  // Tahun: parse "2019" atau "2019-2025".
+  var tahunStr = String(input.tahun || '').trim();
+  var tahunParts = tahunStr.split('-');
+  var tahunDari = tahunParts[0] ? tahunParts[0].trim() : '';
+  var tahunSampai = tahunParts[1] ? tahunParts[1].trim() : tahunDari;
+
+  var dariSel = document.getElementById('tahun_dari');
+  var sampaiSel = document.getElementById('tahun_sampai');
+  if (tahunDari) dariSel.value = tahunDari;
+  if (tahunSampai) sampaiSel.value = tahunSampai;
+
+  // Cakupan wilayah: reverse-map dari Master Wilayah.
+  applyWilayahFromMaster(input.wilayah);
+
+  // Scroll ke form.
+  var formCard = document.getElementById('formCard') || document.querySelector('.card');
+  if (formCard) formCard.scrollIntoView({behavior: 'smooth', block: 'start'});
+
+  setFormStatus('Form terisi dari submission terakhir. Tinjau lalu klik Submit.', 'success');
+  showToast('Form terisi otomatis untuk kode ' + input.kode + '.', 'success');
+}
+
+function applyWilayahFromMaster(wilayah) {
+  var scopeSel = document.getElementById('wilayah_scope');
+  var specificSel = document.getElementById('wilayah_specific');
+  var w = String(wilayah || '').trim();
+
+  if (!w) {
+    scopeSel.value = 'PROV';
+    handleWilayahScope();
+    return;
+  }
+
+  // Cocokkan dengan opsi wilayah tertentu.
+  var isSpecific = false;
+  for (var i = 0; i < specificSel.options.length; i++) {
+    if (specificSel.options[i].value === w) {
+      specificSel.value = w;
+      isSpecific = true;
+      break;
+    }
+  }
+
+  if (isSpecific && w !== 'Prov. Kalimantan Selatan') {
+    scopeSel.value = 'SPECIFIC';
+  } else {
+    scopeSel.value = 'PROV';
+  }
+
+  handleWilayahScope();
 }
 
 function toggleCard(uid) {
@@ -1682,8 +2150,139 @@ function debounceFilter() {
 
 /* ====== JOBS ====== */
 
+function statusLabel(status) {
+  var s = String(status || '').trim().toUpperCase();
+  var map = {
+    'NEED_PARSER': 'Format Tidak Dikenal',
+    'LINK_TIDAK_LENGKAP': 'Link Tidak Lengkap',
+    'DATA_TIDAK_ADA': 'Data Tidak Ada',
+    'SUMBER_PERLU_LOGIN': 'Perlu Login',
+    'PENDING': 'Menunggu',
+    'PROCESSING': 'Diproses',
+    'CANCEL_REQUESTED': 'Menghentikan…',
+    'CANCELLED': 'Dibatalkan',
+    'PARTIAL': 'Sebagian'
+  };
+  return map[s] || s;
+}
+
+function toggleJobCard(jobId) {
+  var card = document.getElementById('job-card-' + jobId);
+  if (!card) return;
+  card.classList.toggle('collapsed');
+  EXPANDED_ERRORS[jobId] = !card.classList.contains('collapsed');
+}
+
+function setJobsSectionCollapsed(collapsed) {
+  var card = document.getElementById('jobsCard');
+  if (!card) return;
+  card.classList.toggle('collapsed', !!collapsed);
+}
+
+function toggleJobsSection() {
+  var card = document.getElementById('jobsCard');
+  if (!card) return;
+  var nowCollapsed = !card.classList.contains('collapsed');
+  JOBS_SECTION_COLLAPSED = nowCollapsed;
+  setJobsSectionCollapsed(nowCollapsed);
+}
+
+function syncJobsSectionCollapse(jobs) {
+  // Kalau user sudah pernah klik header, hormati pilihannya.
+  if (JOBS_SECTION_COLLAPSED !== null) {
+    setJobsSectionCollapsed(JOBS_SECTION_COLLAPSED);
+    return;
+  }
+  // Auto: buka kalau ada job aktif (PROCESSING/PENDING/CANCEL_REQUESTED).
+  var hasActive = (jobs || []).some(function(job) {
+    var s = String(job.Status || '').toUpperCase();
+    return s === 'PROCESSING' || s === 'PENDING' || s === 'CANCEL_REQUESTED';
+  });
+  setJobsSectionCollapsed(!hasActive);
+}
+
+function parseDiagnostics(raw) {
+  if (!raw) return [];
+  try {
+    var parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function jobBodyHtml(job, status) {
+  var errorText = String(job.Error || '').trim();
+  var diags = parseDiagnostics(job.Diagnostics);
+
+  // Job sukses murni: body hanya info singkat.
+  if (status === 'SUCCESS') {
+    var hasProblemDiag = diags.some(function(d) {
+      var st = String(d.status || '').toUpperCase();
+      return st && st !== 'SUCCESS' && st !== 'FALLBACK';
+    });
+    if (!errorText && !hasProblemDiag) {
+      return '<div class="job-empty">Job selesai tanpa error. Nilai tersimpan ke sheet Hasil.</div>';
+    }
+    if (!errorText) {
+      diags = diags.filter(function(d) {
+        var st = String(d.status || '').toUpperCase();
+        return st && st !== 'SUCCESS' && st !== 'FALLBACK';
+      });
+    }
+  }
+
+  var parts = [];
+
+  if (status === 'PROCESSING' && errorText) {
+    parts.push(
+      '<div class="job-error-text" style="background:var(--orange-tint)">'
+      + escapeHtml(errorText)
+      + '</div>'
+    );
+    errorText = '';
+  }
+
+  if (errorText) {
+    parts.push(
+      '<div class="job-error-text">' + escapeHtml(errorText) + '</div>'
+    );
+  }
+
+  if (diags.length) {
+    var rows = diags.map(function(d) {
+      var meta = [];
+      if (d.tahun != null) meta.push('Tahun ' + d.tahun);
+      if (d.source != null) meta.push('Sumber ' + d.source);
+      if (d.status) meta.push(String(d.status).replace(/_/g, ' '));
+      var message = String(d.message || '').split('\n')[0].slice(0, 200);
+      return '<span class="diag-row">'
+        + (meta.length ? '<span class="diag-meta">' + escapeHtml(meta.join(' · ')) + '</span> — ' : '')
+        + escapeHtml(message)
+        + '</span>';
+    }).join('');
+
+    parts.push(
+      '<div class="job-diag">'
+      + '<div class="diag-meta" style="margin-bottom:4px">Detail diagnostik</div>'
+      + rows
+      + '</div>'
+    );
+  }
+
+  if (!parts.length) {
+    if (status === 'PENDING') {
+      return '<div class="job-empty">Menunggu worker mengambil job&hellip;</div>';
+    }
+    return '<div class="job-empty">Tidak ada detail tambahan untuk job ini.</div>';
+  }
+
+  return parts.join('');
+}
+
 function renderJobs(jobs) {
   var container = document.getElementById('jobsContainer');
+  syncJobsSectionCollapse(jobs);
   if (!jobs.length) {
     container.innerHTML = '<div class="empty">Belum ada job.</div>';
     return;
@@ -1693,42 +2292,66 @@ function renderJobs(jobs) {
     var status = String(job.Status || '').toUpperCase();
     var progress = Number(job.Progress || 0);
     var barClass = status === 'SUCCESS' ? 'green' : (status === 'FAILED' ? 'red' : '');
+    var jobId = String(job.Job_ID || '');
+
+    // Saat PROCESSING, worker menulis teks percobaan di kolom Error.
+    var progressLabel = progress + '%';
+    if (status === 'PROCESSING' && job.Error) {
+      progressLabel = escapeHtml(String(job.Error));
+    }
 
     var actionHtml = '';
     if (status === 'PENDING' || status === 'PROCESSING') {
-      actionHtml = '<button class="danger btn-sm" onclick="cancelJob(\'' + escapeHtml(job.Job_ID) + '\')">Batalkan</button>';
+      actionHtml = '<button class="danger btn-sm stop-btn" onclick="event.stopPropagation(); cancelJob(\'' + escapeHtml(jobId) + '\')">Stop</button>';
     } else if (status === 'CANCEL_REQUESTED') {
-      actionHtml = '<button class="danger btn-sm" disabled>Membatalkan&hellip;</button>';
+      actionHtml = '<button class="danger btn-sm stop-btn" disabled>Stopping&hellip;</button>';
     }
 
-    return '<div class="job">'
-      + '<div class="job-info">'
+    // Default: hanya PROCESSING/CANCEL_REQUESTED terbuka (progress live).
+    // PENDING (antrian) default tertutup — user bisa klik manual.
+    // Pilihan user disimpan di EXPANDED_ERRORS dan menang atas default.
+    var isActive = (status === 'PROCESSING' || status === 'CANCEL_REQUESTED');
+    var collapsed;
+    if (EXPANDED_ERRORS[jobId] === true) {
+      collapsed = false;
+    } else if (EXPANDED_ERRORS[jobId] === false) {
+      collapsed = true;
+    } else {
+      collapsed = !isActive;
+    }
+    var collapsedClass = collapsed ? ' collapsed' : '';
+
+    return '<div class="job-card' + collapsedClass + '" id="job-card-' + escapeHtml(jobId) + '">'
+      + '<div class="job-head" onclick="toggleJobCard(\'' + escapeHtml(jobId) + '\')">'
+      + '<span class="chev">&#9660;</span>'
       + '<span class="code">' + escapeHtml(job.Kode) + '</span>'
-      + '<span class="id">' + escapeHtml(job.Job_ID) + '</span>'
-      + '</div>'
-      + '<div class="job-actions">'
-      + '<span class="badge ' + statusBadgeClass(job.Status) + '">' + escapeHtml(job.Status) + '</span>'
-      + '<span class="job-progress"><span class="progress-bar"><span class="fill ' + barClass + '" style="width:' + Math.min(progress, 100) + '%"></span></span>' + progress + '%</span>'
+      + '<span class="jid" title="' + escapeHtml(jobId) + '">' + escapeHtml(jobId) + '</span>'
+      + '<span class="summary">'
+      + '<span class="badge ' + statusBadgeClass(job.Status) + '" title="' + escapeHtml(job.Status) + '">' + escapeHtml(statusLabel(job.Status)) + '</span>'
+      + '<span class="job-progress"><span class="progress-bar"><span class="fill ' + barClass + '" style="width:' + Math.min(progress, 100) + '%"></span></span>' + progressLabel + '</span>'
       + actionHtml
-      + '</div></div>';
+      + '</span>'
+      + '</div>'
+      + '<div class="job-body">' + jobBodyHtml(job, status) + '</div>'
+      + '</div>';
   }).join('');
 }
 
 function cancelJob(jobId) {
   showConfirm(
-    'Batalkan job ini? Jika job sedang diproses, worker akan menghentikan proses tersebut.',
+    'Stop job ini? Jika job sedang diproses, worker akan menghentikan proses tersebut.',
     function() {
       google.script.run
         .withSuccessHandler(function(result) {
           if (!result.success) {
-            showToast(result.error || 'Job tidak dapat dibatalkan.', 'error');
+            showToast(result.error || 'Job tidak dapat dihentikan.', 'error');
           } else {
-            showToast('Job berhasil dibatalkan.', 'success');
+            showToast('Job berhasil dihentikan.', 'success');
           }
           refreshDashboard();
         })
         .withFailureHandler(function(error) {
-          showToast('Gagal membatalkan job: ' + error.message, 'error');
+          showToast('Gagal menghentikan job: ' + error.message, 'error');
         })
         .cancelJob(jobId);
     }
@@ -1780,6 +2403,8 @@ document.addEventListener('click', function(e) {
 
 setupYearOptions();
 handleWilayahScope();
+updateAddSourceButton();
+loadIndicatorCatalog();
 refreshDashboard();
 setInterval(refreshDashboard, 10000);
 

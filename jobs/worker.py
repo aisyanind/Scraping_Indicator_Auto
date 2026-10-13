@@ -12,6 +12,7 @@ from config import (
     WORKER_CONCURRENCY,
 )
 from connectors.apps_script import (
+    get_existing_results,
     get_job_status,
     get_pending_jobs,
     save_results,
@@ -29,21 +30,38 @@ from models import IndicatorJob
 CANCEL_POLL_SECONDS = 2
 
 
-def _job_child(raw_job, output_queue):
+def _job_child(
+    raw_job,
+    output_queue,
+    progress_queue,
+    existing_results=None,
+):
     """
     Scraping dijalankan di child process.
 
     Keuntungan:
-    jika user menekan Batalkan, parent worker dapat menghentikan
+    jika user menekan Stop, parent worker dapat menghentikan
     child process tanpa menunggu request/PDF/Selenium selesai.
+
+    Progress scraping (percobaan ke-N) dikirim ke parent lewat
+    progress_queue; parent yang melakukan update status ke Apps Script
+    supaya child tetap bebas dari panggilan HTTP.
     """
     try:
         job = IndicatorJob.from_dict(
             raw_job
         )
 
+        def _on_progress(info):
+            try:
+                progress_queue.put_nowait(info)
+            except Exception:
+                pass
+
         output = process_indicator_job(
-            job
+            job,
+            on_progress=_on_progress,
+            existing_results=existing_results,
         )
 
         output_queue.put({
@@ -142,6 +160,28 @@ def _mark_job(job_id, status, progress=None, error="", diagnostics=None):
         )
 
 
+def _drain_progress(progress_queue, job_id):
+    """
+    Ambil semua update progress dari child (non-blocking)
+    dan teruskan ke Apps Script.
+    """
+    while True:
+        try:
+            info = progress_queue.get_nowait()
+        except queue.Empty:
+            return
+
+        if not isinstance(info, dict):
+            continue
+
+        _mark_job(
+            job_id,
+            "PROCESSING",
+            progress=info.get("progress"),
+            error=str(info.get("message") or "")[:300],
+        )
+
+
 def process_one(raw_job):
     job = IndicatorJob.from_dict(
         raw_job
@@ -170,6 +210,7 @@ def process_one(raw_job):
             job.job_id,
             "PROCESSING",
             progress=5,
+            error="Memeriksa hasil tersimpan…",
         )
     except Exception as error:
         print(
@@ -178,13 +219,29 @@ def process_one(raw_job):
         )
         return
 
+    try:
+        existing_results = get_existing_results(job.kode)
+        print(
+            f"[HASIL] {len(existing_results)} hasil SUCCESS "
+            f"untuk kode {job.kode}."
+        )
+    except Exception as error:
+        existing_results = None
+        print(
+            "[HASIL] Tidak dapat memeriksa hasil lama; "
+            f"scraping tetap dilanjutkan: {str(error).splitlines()[0][:200]}"
+        )
+
     output_queue = mp.Queue()
+    progress_queue = mp.Queue()
 
     process = mp.Process(
         target=_job_child,
         args=(
             raw_job,
             output_queue,
+            progress_queue,
+            existing_results,
         ),
         daemon=False,
     )
@@ -198,6 +255,11 @@ def process_one(raw_job):
 
     try:
         while process.is_alive():
+            _drain_progress(
+                progress_queue,
+                job.job_id,
+            )
+
             time.sleep(
                 CANCEL_POLL_SECONDS
             )
@@ -247,6 +309,12 @@ def process_one(raw_job):
     finally:
         process.join(timeout=2)
         _unregister_process(process)
+        # Ambil sisa update progress yang mungkin masih
+        # berantre di queue sebelum status final ditulis.
+        _drain_progress(
+            progress_queue,
+            job.job_id,
+        )
 
     if timed_out:
         _mark_job(

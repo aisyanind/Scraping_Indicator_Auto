@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from engine.run_indicator import (
     _sources_in_formula,
     _is_retryable_status,
+    _build_failure_summary,
     process_indicator_job,
 )
 from engine.formula import calculate_formula
@@ -339,6 +340,44 @@ def test_flip_pdf_reads_province_chart_year(monkeypatch):
     ]
 
 
+def test_flip_pdf_maps_repeated_values_in_ten_year_chart(monkeypatch):
+    import extractors.flip_pdf as flip_pdf
+
+    pages = [""] * 141
+    pages.append(
+        "Grafik nilai indeks risiko Provinsi Kalimantan Selatan "
+        "dari Tahun 2015 sampai dengan tahun 2024"
+    )
+    chart_values = [
+        151.60, 147.31, 147.31, 145.37, 145.37,
+        144.81, 141.66, 128.81, 129.44, 122.11,
+    ]
+    requested_counts = []
+
+    monkeypatch.setattr(flip_pdf, "_load_pages", lambda _url: pages)
+
+    def fake_ocr(_image_url, expected_count):
+        requested_counts.append(expected_count)
+        return chart_values, 0.83
+
+    monkeypatch.setattr(flip_pdf, "_ocr_chart_values", fake_ocr)
+    payload = SimpleNamespace(
+        content=b"Flip PDF Professional",
+        final_url="https://example.test/reports/mobile/index.html",
+        url="https://example.test/reports/mobile/index.html",
+    )
+
+    result = flip_pdf.extract_flip_pdf(
+        payload,
+        parse_instruction("Indeks Risiko Bencana Prov. Kalimantan Selatan"),
+        2019,
+    )
+
+    assert result.value == 145.37
+    assert result.source_type == "flip_pdf:province_chart_ocr"
+    assert requested_counts == [10]
+
+
 def test_retryable_statuses():
     """Status final tidak di-retry; status transient berhak retry."""
     for status in ("SUCCESS", "REVIEW", "DATA_TIDAK_ADA", "SUMBER_PERLU_LOGIN"):
@@ -401,6 +440,7 @@ def test_process_indicator_job_skips_existing_complete_year(monkeypatch):
     assert output["status"] == "SUCCESS"
     assert output["results"] == []
     assert output["diagnostics"][0]["status"] == "SKIPPED_EXISTING"
+    assert output["failure_summary"] == ""
 
 
 def test_process_indicator_job_scrapes_if_a_requested_region_is_missing(monkeypatch):
@@ -496,6 +536,13 @@ def test_process_indicator_job_stops_after_max_attempts(monkeypatch):
     assert len(calls) == run_indicator.MAX_SCRAPE_ATTEMPTS
     assert output["status"] == "NEED_PARSER"
 
+    summary = output["failure_summary"]
+    assert "Data tahun 2024" in summary
+    assert "tidak berhasil membaca data dari halaman sumber" in summary
+    # Detail teknis exception tidak boleh muncul di ringkasan.
+    assert "koneksi putus" not in summary
+    assert "RuntimeError" not in summary
+
 
 def test_process_indicator_job_no_retry_on_final_status(monkeypatch):
     """DATA_TIDAK_ADA tidak di-retry."""
@@ -517,6 +564,118 @@ def test_process_indicator_job_no_retry_on_final_status(monkeypatch):
 
     assert len(calls) == 1
     assert output["status"] == "DATA_TIDAK_ADA"
+    assert "sumber tidak menyediakan data" in output["failure_summary"]
+
+
+def test_flip_pdf_province_summary_reads_years_from_page():
+    """Tahun kolom ringkasan provinsi dibaca dari halaman, bukan hardcode."""
+    page = (
+        "tabel ringkasan irbi provinsi irbi 2024 irbi 2025 "
+        "22 kalimantan selatan 129.44 122.11 turun"
+    )
+    assert (
+        _province_summary_value(page, "Prov. Kalimantan Selatan", 2024)
+        == 129.44
+    )
+    assert (
+        _province_summary_value(page, "Prov. Kalimantan Selatan", 2025)
+        == 122.11
+    )
+    assert (
+        _province_summary_value(page, "Prov. Kalimantan Selatan", 2026)
+        is None
+    )
+
+
+def test_build_failure_summary_friendly():
+    """Ringkasan gagal: bahasa sederhana, sumber tak dipakai diabaikan."""
+    diagnostics = [
+        {
+            "tahun": 2018,
+            "source": 1,
+            "status": "DATA_TIDAK_ADA",
+            "message": "parse error detail",
+        },
+        {
+            "tahun": 2018,
+            "source": 2,
+            "status": "NEED_PARSER",
+            "message": "boom",
+        },
+        {
+            "tahun": 2019,
+            "source": 1,
+            "status": "SKIPPED_EXISTING",
+            "message": "",
+        },
+        {
+            "tahun": 2020,
+            "source": 1,
+            "status": "SUCCESS",
+            "message": "",
+        },
+        {
+            "tahun": 2021,
+            "source": 1,
+            "status": "FALLBACK",
+            "message": "",
+        },
+    ]
+    regions = ["Prov. Kalimantan Selatan"] + [
+        f"Wilayah {index}" for index in range(13)
+    ]
+
+    summary = _build_failure_summary(
+        diagnostics,
+        used_sources={1},
+        regions=regions,
+    )
+
+    assert "Data tahun 2018 (untuk 14 wilayah)" in summary
+    assert (
+        "sumber 1: sumber tidak menyediakan data untuk tahun tersebut"
+        in summary
+    )
+    # Kegagalan sumber 2 tidak dipakai Rumus S1 -> bukan kegagalan year.
+    assert "boom" not in summary
+    assert "parse error detail" not in summary
+    # Sukses / skip / fallback bukan kegagalan.
+    assert "2019" not in summary
+    assert "2020" not in summary
+    assert "2021" not in summary
+    # Tidak ada istilah teknis.
+    assert "DATA_TIDAK_ADA" not in summary
+    assert "SKIPPED_EXISTING" not in summary
+
+    single = _build_failure_summary(
+        [{"tahun": 2021, "source": 1, "status": "NEED_PARSER"}],
+        used_sources={1},
+        regions=["Prov. Kalimantan Selatan"],
+    )
+    assert (
+        "Data tahun 2021 (untuk wilayah Prov. Kalimantan Selatan)"
+        in single
+    )
+    assert "tidak berhasil membaca data dari halaman sumber" in single
+
+    formula = _build_failure_summary(
+        [{"tahun": 2022, "status": "FAILED_FORMULA", "message": "S1 kosong"}],
+        used_sources={1},
+        regions=[],
+    )
+    assert "Data tahun 2022:" in formula
+    assert "nilai tidak bisa dihitung" in formula
+    assert "S1 kosong" not in formula
+
+    # Tidak ada kegagalan -> ringkasan kosong.
+    assert (
+        _build_failure_summary(
+            [{"tahun": 2018, "source": 1, "status": "SUCCESS"}],
+            used_sources={1},
+            regions=regions,
+        )
+        == ""
+    )
 
 
 if __name__ == "__main__":
@@ -535,6 +694,8 @@ if __name__ == "__main__":
     test_ocr_line_fallback_returns_review()
     test_flip_pdf_explicit_year_and_table_value()
     test_flip_pdf_table_years_beyond_sequence()
+    test_flip_pdf_province_summary_reads_years_from_page()
+    test_build_failure_summary_friendly()
     test_retryable_statuses()
     try:
         import pytest  # noqa: F401

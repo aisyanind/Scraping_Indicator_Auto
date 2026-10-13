@@ -147,10 +147,13 @@ def _province_value(page_text, tahun, target=None):
 
 
 def _province_summary_value(page_text, target, tahun):
-    """Ambil nilai dari tabel ringkasan IRBI 2023/2024 provinsi."""
-    if "irbi 2023" not in page_text or "irbi 2024" not in page_text:
-        return None
+    """
+    Ambil nilai dari tabel ringkasan provinsi (dua kolom tahun).
 
+    Tahun kolom dibaca dari halaman (dua penyebutan "IRBI <tahun>"
+    terakhir sebelum baris wilayah), bukan ditulis di kode,
+    supaya tetap benar kalau sumber menambah tahun baru.
+    """
     target_pattern = (
         r"(?:prov\.\s+)*" + re.escape(_target_bare(target))
     )
@@ -163,10 +166,22 @@ def _province_summary_value(page_text, target, tahun):
     if not match:
         return None
 
+    header_years = [
+        int(raw)
+        for raw in re.findall(
+            r"irbi\s+(20\d{2})",
+            page_text[: match.start()],
+            re.IGNORECASE,
+        )
+    ]
+    if len(header_years) < 2:
+        return None
+
     values = [_parse_number(match.group(1)), _parse_number(match.group(2))]
-    if int(tahun) == 2023:
+    year_first, year_last = header_years[-2], header_years[-1]
+    if int(tahun) == year_first:
         return values[0]
-    if int(tahun) == 2024:
+    if int(tahun) == year_last:
         return values[1]
     return None
 
@@ -313,12 +328,12 @@ def _ocr_chart_values(image_url, expected_count):
 
         caption_y = min(caption_positions)
         crop = image.crop((
-            int(image.width * 0.10),
-            max(0, int(caption_y - image.height * 0.35)),
-            int(image.width * 0.65),
-            int(caption_y - image.height * 0.07),
+            int(image.width * 0.12),
+            max(0, int(caption_y - image.height * 0.32)),
+            int(image.width * 0.60),
+            min(image.height, int(caption_y - image.height * 0.01)),
         ))
-        crop = crop.resize((crop.width * 2, crop.height * 2))
+        crop = crop.resize((crop.width * 3, crop.height * 3))
         crop = ImageEnhance.Contrast(crop).enhance(1.7)
 
         candidates = []

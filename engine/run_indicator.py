@@ -203,6 +203,71 @@ def _is_retryable_status(status):
     return status not in _NON_RETRYABLE_STATUSES
 
 
+# Penjelasan kegagalan berbahasa sederhana untuk user (bukan istilah
+# teknis). Detail teknis tetap tersimpan di diagnostik job.
+_FRIENDLY_REASONS = {
+    "NEED_PARSER": "tidak berhasil membaca data dari halaman sumber",
+    "LEGACY_FAILED": "pembaca sumber mengalami gangguan",
+    "DATA_TIDAK_ADA": "sumber tidak menyediakan data untuk tahun tersebut",
+    "LINK_TIDAK_LENGKAP": (
+        "link tidak menampilkan datanya "
+        "(bisa jadi halaman katalog)"
+    ),
+    "SUMBER_PERLU_LOGIN": "sumber membutuhkan login",
+    "REVIEW": "data terbaca tetapi masih perlu ditinjau manual",
+    "FAILED_FORMULA": (
+        "nilai tidak bisa dihitung "
+        "karena nilai dari sumber tidak lengkap"
+    ),
+    "TIMEOUT": "proses terlalu lama sehingga dihentikan",
+}
+
+
+def _build_failure_summary(diagnostics, used_sources, regions):
+    """
+    Ringkasan kegagalan per tahun, berbahasa mudah dipahami.
+    Hanya dipanggil saat job tidak seluruhnya sukses.
+    """
+    per_year = {}
+
+    for item in diagnostics or []:
+        status = str(item.get("status") or "").strip().upper()
+        if status in {"SUCCESS", "FALLBACK", "SKIPPED_EXISTING"}:
+            continue
+
+        # Kegagalan sumber yang tidak dipakai Rumus bukan kegagalan year.
+        source = item.get("source")
+        if source is not None and used_sources and source not in used_sources:
+            continue
+
+        reason = _FRIENDLY_REASONS.get(status, "gagal mengambil data")
+        label = f"sumber {source}: {reason}" if source else reason
+        tahun = str(item.get("tahun") or "-")
+        bucket = per_year.setdefault(tahun, [])
+        if label not in bucket:
+            bucket.append(label)
+
+    if not per_year:
+        return ""
+
+    if len(regions) > 1:
+        area = f"untuk {len(regions)} wilayah"
+    elif regions:
+        area = f"untuk wilayah {regions[0]}"
+    else:
+        area = ""
+
+    lines = []
+    for tahun in sorted(per_year):
+        scope = f" ({area})" if area else ""
+        lines.append(
+            f"Data tahun {tahun}{scope}: "
+            f"{'; '.join(per_year[tahun])}."
+        )
+
+    return "\n".join(lines)
+
+
 def process_indicator_job(
     job: IndicatorJob,
     on_progress=None,
@@ -602,8 +667,26 @@ def process_indicator_job(
     else:
         final_status = "NEED_PARSER"
 
+    failure_summary = ""
+    if final_status != "SUCCESS":
+        descriptions = " | ".join(
+            description
+            for _, description in source_specs
+            if str(description or "").strip()
+        )
+        expected_regions = parse_instruction(
+            _build_source_context(job, descriptions),
+            default_wilayah=wilayah,
+        ).target_wilayahs or [wilayah]
+        failure_summary = _build_failure_summary(
+            diagnostics,
+            used_sources,
+            expected_regions,
+        )
+
     return {
         "status": final_status,
         "results": results,
         "diagnostics": diagnostics,
+        "failure_summary": failure_summary,
     }

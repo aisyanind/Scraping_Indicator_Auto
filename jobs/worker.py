@@ -12,6 +12,7 @@ from config import (
     WORKER_CONCURRENCY,
 )
 from connectors.apps_script import (
+    AppsScriptError,
     get_existing_results,
     get_job_status,
     get_pending_jobs,
@@ -227,10 +228,24 @@ def process_one(raw_job):
         )
     except Exception as error:
         existing_results = None
-        print(
-            "[HASIL] Tidak dapat memeriksa hasil lama; "
-            f"scraping tetap dilanjutkan: {str(error).splitlines()[0][:200]}"
-        )
+        first_line = str(error).splitlines()[0][:200]
+
+        if isinstance(error, AppsScriptError) and (
+            "Unknown action" in str(error)
+        ):
+            print(
+                "[HASIL] PERINGATAN: Fitur skip data lama NONAKTIF "
+                "karena Apps Script yang ter-deploy tidak mengenali "
+                "action 'existing_results'. Redeploy Code.gs terbaru "
+                "(Deploy -> Manage deployments -> New version), "
+                "lalu restart worker. Semua tahun akan di-scrape ulang. "
+                f"Detail: {first_line}"
+            )
+        else:
+            print(
+                "[HASIL] Tidak dapat memeriksa hasil lama; "
+                f"scraping tetap dilanjutkan: {first_line}"
+            )
 
     output_queue = mp.Queue()
     progress_queue = mp.Queue()
@@ -322,8 +337,10 @@ def process_one(raw_job):
             "FAILED",
             progress=100,
             error=(
-                f"Job melebihi batas waktu "
-                f"{JOB_TIMEOUT_SECONDS} detik."
+                f"Proses terlalu lama (melebihi "
+                f"{JOB_TIMEOUT_SECONDS} detik) "
+                f"sehingga dihentikan otomatis. "
+                f"Coba jalankan ulang job ini."
             ),
         )
 
@@ -376,7 +393,8 @@ def process_one(raw_job):
             "FAILED",
             progress=100,
             error=(
-                "Scraper berhenti tanpa mengembalikan hasil."
+                "Proses scraping berhenti tanpa hasil. "
+                "Coba jalankan ulang job ini."
             ),
         )
 
@@ -387,20 +405,28 @@ def process_one(raw_job):
         return
 
     if not child_result.get("ok"):
-        error = child_result.get(
-            "error",
-            "Unknown scraper error",
+        error = str(
+            child_result.get(
+                "error",
+                "Unknown scraper error",
+            )
+            or ""
+        )
+        first_line = (
+            error.splitlines()[0][:300]
+            if error.strip()
+            else "penyebab tidak diketahui"
         )
 
         _mark_job(
             job.job_id,
             "FAILED",
             progress=100,
-            error=error,
+            error=f"Proses scraping gagal: {first_line}",
         )
 
         print(
-            f"[JOB] {job.job_id} -> FAILED | {error}"
+            f"[JOB] {job.job_id} -> FAILED | {first_line}"
         )
         return
 
@@ -435,11 +461,20 @@ def process_one(raw_job):
 
         final_status = output["status"]
 
+        # Sukses total: Error job dikosongkan (tidak ada penjelasan).
+        # Selain sukses: tulis ringkasan gagal berbahasa sederhana.
+        failure_summary = ""
+        if final_status != "SUCCESS":
+            failure_summary = str(
+                output.get("failure_summary") or ""
+            ).strip()
+
         _mark_job(
             job.job_id,
             final_status,
             progress=100,
             diagnostics=output["diagnostics"],
+            error=failure_summary,
         )
 
     except Exception as error:
@@ -450,8 +485,9 @@ def process_one(raw_job):
             "FAILED",
             progress=100,
             error=(
-                f"Gagal menyimpan hasil: "
-                f"{str(error).splitlines()[0][:300]}"
+                f"Hasil tidak bisa disimpan ke spreadsheet "
+                f"({str(error).splitlines()[0][:200]}). "
+                f"Coba jalankan ulang job ini."
             ),
         )
 
@@ -468,17 +504,12 @@ def process_one(raw_job):
     )
 
     if final_status != "SUCCESS":
-        for diagnostic in output["diagnostics"][:5]:
-            message = str(
-                diagnostic.get("message") or diagnostic.get("status") or ""
-            ).splitlines()[0][:200]
-            print(
-                f"    [DIAG] tahun={diagnostic.get('tahun')} "
-                f"sumber={diagnostic.get('source')} "
-                f"status={diagnostic.get('status')} "
-                f"confidence={diagnostic.get('confidence')} | "
-                f"{message}"
-            )
+        summary = failure_summary or (
+            "Tidak ada data yang berhasil diambil. "
+            "Lihat detail diagnostik di kartu Monitoring."
+        )
+        for line in summary.splitlines():
+            print(f"    [INFO] {line}")
 
 
 def run_worker():

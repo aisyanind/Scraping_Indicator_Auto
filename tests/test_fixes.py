@@ -473,11 +473,85 @@ def test_process_indicator_job_scrapes_if_a_requested_region_is_missing(monkeypa
         existing_results=existing_results,
     )
 
+    # Tahun tetap di-scrape karena masih ada wilayah yang kurang.
     assert len(calls) == 1
-    assert all(
-        diagnostic["status"] != "SKIPPED_EXISTING"
-        for diagnostic in output["diagnostics"]
+    # Kegagalan scrape tidak menghasilkan baris untuk wilayah yang
+    # sudah SUCCESS (tidak ditimpa DATA_TIDAK_ADA).
+    for result in output["results"]:
+        assert result["wilayah"] not in regions[:-1]
+
+
+def test_process_indicator_job_partial_year_emits_only_missing_region(monkeypatch):
+    """Tahun partial: hanya wilayah yang belum SUCCESS yang dapat baris hasil."""
+    import config
+    from engine import run_indicator
+
+    def fake_scrape(**kwargs):
+        # Scrape mengembalikan nilai untuk semua 13 kab/kota.
+        return _FakeResult(
+            "SUCCESS",
+            value={region: 80.0 for region in config.KALSEL_WILAYAHS[1:]},
+        )
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
+    regions = config.KALSEL_WILAYAHS[1:]
+    missing = regions[-1]
+    existing_results = [
+        {
+            "Kode": "TEST",
+            "Wilayah": region,
+            "Tahun": "2024",
+            "Status": "SUCCESS",
+        }
+        for region in regions[:-1]
+    ]
+    job = _make_job(
+        Data_Diambil_1="Cakupan: seluruh Kab/Kota di Kalsel"
     )
+
+    output = process_indicator_job(
+        job,
+        existing_results=existing_results,
+    )
+
+    # Hanya wilayah yang kurang yang menghasilkan baris.
+    assert len(output["results"]) == 1
+    assert output["results"][0]["wilayah"] == missing
+    assert output["results"][0]["status"] == "SUCCESS"
+    assert output["status"] == "SUCCESS"
+
+
+def test_process_indicator_job_does_not_clobber_existing_on_failure(monkeypatch):
+    """Scrape gagal: wilayah yang sudah SUCCESS tidak ditimpa DATA_TIDAK_ADA."""
+    import config
+    from engine import run_indicator
+
+    def fake_scrape(**kwargs):
+        return _FakeResult("DATA_TIDAK_ADA")
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
+    regions = config.KALSEL_WILAYAHS[1:]
+    existing_results = [
+        {
+            "Kode": "TEST",
+            "Wilayah": region,
+            "Tahun": "2024",
+            "Status": "SUCCESS",
+        }
+        for region in regions[:-1]
+    ]
+    job = _make_job(
+        Data_Diambil_1="Cakupan: seluruh Kab/Kota di Kalsel"
+    )
+
+    output = process_indicator_job(
+        job,
+        existing_results=existing_results,
+    )
+
+    # Tidak ada baris DATA_TIDAK_ADA untuk wilayah yang sudah SUCCESS.
+    for result in output["results"]:
+        assert result["wilayah"] not in regions[:-1]
 
 
 def test_process_indicator_job_reports_progress(monkeypatch):

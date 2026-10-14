@@ -5,8 +5,9 @@ const CONFIG = {
   JOB_SHEET: 'Scraping_Jobs_Test'
 };
 
-// Sheet Rekap di spreadsheet dashboard (katalog resmi ~80 indikator).
+// Sheet Rekap di spreadsheet dashboard (katalog resmi indikator).
 // Kolom A = kode, kolom B = nama, data mulai baris 4.
+// Dropdown form diambil dari sini saja (bukan dari Master).
 const REKAP_SHEET_ID =
   '1HQy4V3RyJsuEDAlZ_Qro2oGlCgO-fv3s';
 const REKAP_SHEET_NAME = 'Rekap';
@@ -1222,7 +1223,7 @@ function readRekapIndicators_() {
       list.push({kode: kode, nama: nama || kode});
     }
   } catch (error) {
-    // Rekap opsional — gagal akses tidak boleh merusak katalog Master.
+    // Rekap gagal dibaca — kembalikan daftar kosong, jangan crash form.
     console.warn('Gagal membaca Rekap: ' + error);
   }
 
@@ -1231,8 +1232,9 @@ function readRekapIndicators_() {
 
 /**
  * Katalog indikator untuk dropdown form:
- * digabung dari Master (riwayat submit) + Rekap (katalog resmi).
- * Dedupe by kode; nama Rekap menang bila keduanya ada.
+ * diambil HANYA dari sheet Rekap (katalog resmi), dedupe by kode.
+ * Master tidak dipakai untuk dropdown — Master hanya log riwayat
+ * submit (bisa berisi salah ketik); Rekap adalah daftar resmi.
  */
 function getIndicatorCatalog() {
   const cache = CacheService.getScriptCache();
@@ -1247,28 +1249,11 @@ function getIndicatorCatalog() {
   }
 
   const byKode = {};
-
-  // Master dulu (riwayat) — nama bisa ditimpa Rekap di bawah.
-  const masterRows = readMasterObjects_();
-  for (let i = masterRows.length - 1; i >= 0; i--) {
-    const row = masterRows[i];
-    const kode = String(row.Kode || '').trim();
-    if (!isIndicatorCode_(kode)) continue;
-    if (!byKode[kode]) {
-      byKode[kode] = {
-        kode: kode,
-        nama: String(row.Nama_Indikator || '').trim() || kode
-      };
-    }
-  }
-
-  // Rekap menimpa nama dengan nama resmi.
   const rekapList = readRekapIndicators_();
+
   for (let i = 0; i < rekapList.length; i++) {
     const item = rekapList[i];
-    if (byKode[item.kode]) {
-      byKode[item.kode].nama = item.nama;
-    } else {
+    if (!byKode[item.kode]) {
       byKode[item.kode] = {kode: item.kode, nama: item.nama};
     }
   }

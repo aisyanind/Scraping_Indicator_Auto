@@ -144,8 +144,18 @@ def _build_source_context(job, description):
 
 
 def _complete_existing_years(job, years, source_specs, wilayah, records):
+    """
+    Return (skipped_years, existing_pairs).
+
+    skipped_years : tahun yang SELURUH wilayahnya sudah SUCCESS (tidak
+                    perlu di-scrape sama sekali).
+    existing_pairs: set (tahun, region) yang sudah SUCCESS — dipakai
+                    untuk skip per-wilayah di tahun yang masih
+                    sebagian (partial) sehingga hanya wilayah yang
+                    belum ada yang diambil ulang.
+    """
     if not records:
-        return set()
+        return set(), set()
 
     descriptions = " | ".join(
         description
@@ -178,7 +188,7 @@ def _complete_existing_years(job, years, source_specs, wilayah, records):
         if region:
             existing_keys.add((tahun, region))
 
-    return {
+    skipped_years = {
         tahun
         for tahun in years
         if all(
@@ -186,6 +196,8 @@ def _complete_existing_years(job, years, source_specs, wilayah, records):
             for region in expected_regions
         )
     }
+
+    return skipped_years, existing_keys
 
 
 # Status hasil scrape yang tidak perlu di-retry: sudah final.
@@ -286,7 +298,7 @@ def process_indicator_job(
         (job.sumber_3, job.data_diambil_3),
     ]
     used_sources = _sources_in_formula(job.rumus)
-    skipped_years = _complete_existing_years(
+    skipped_years, existing_pairs = _complete_existing_years(
         job,
         years,
         source_specs,
@@ -518,6 +530,17 @@ def process_indicator_job(
                         )
                 break
 
+    # (tahun, wilayah) yang sudah SUCCESS — tidak boleh ditulis ulang.
+    # Dipakai untuk tahun partial: hanya wilayah yang belum ada yang
+    # menghasilkan baris hasil baru.
+    skipped_pairs_by_year = {}
+
+    def _skip_existing(tahun, region):
+        if (tahun, normalize_region(region)) in existing_pairs:
+            skipped_pairs_by_year.setdefault(tahun, []).append(region)
+            return True
+        return False
+
     for tahun in years:
         if tahun in skipped_years:
             continue
@@ -527,6 +550,9 @@ def process_indicator_job(
             for status in year_statuses[tahun]
         ):
             for region in _regions(wilayah, None, None, None):
+                if _skip_existing(tahun, region):
+                    continue
+
                 results.append({
                     "kode": job.kode,
                     "nama_indikator": job.nama_indikator,
@@ -553,6 +579,9 @@ def process_indicator_job(
 
         if source_failed:
             for region in _regions(wilayah, None, None, None):
+                if _skip_existing(tahun, region):
+                    continue
+
                 results.append({
                     "kode": job.kode,
                     "nama_indikator": job.nama_indikator,
@@ -577,6 +606,9 @@ def process_indicator_job(
         )
 
         for region in region_targets:
+            if _skip_existing(tahun, region):
+                continue
+
             r1 = _value_for_region(
                 s1,
                 region,
@@ -621,6 +653,20 @@ def process_indicator_job(
                 "status": "SUCCESS",
                 "error": "",
             })
+
+    # Diagnostic per tahun yang di-scrape sebagian: wilayah yang sudah
+    # SUCCESS dilewati, hanya yang belum ada yang diambil ulang.
+    for tahun in sorted(skipped_pairs_by_year):
+        regions = skipped_pairs_by_year[tahun]
+        diagnostics.append({
+            "tahun": tahun,
+            "status": "SKIPPED_EXISTING",
+            "message": (
+                f"{len(regions)} wilayah sudah SUCCESS; "
+                "hanya wilayah yang belum ada data yang diambil ulang."
+            ),
+            "wilayah": regions,
+        })
 
     statuses = {
         d.get("status")

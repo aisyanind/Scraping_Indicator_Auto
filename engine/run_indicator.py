@@ -63,6 +63,20 @@ def _value_for_region(value, region):
     return None
 
 
+def _round2(value):
+    """
+    Bulatkan nilai numerik ke 2 angka di belakang koma saat ditulis ke
+    hasil akhir. Nilai None/non-angka diteruskan apa adanya.
+    """
+    if value is None or isinstance(value, bool):
+        return value
+
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return value
+
+
 def _regions(default_region, *values):
     output = []
     seen = set()
@@ -646,10 +660,10 @@ def process_indicator_job(
                 "nama_indikator": job.nama_indikator,
                 "wilayah": region,
                 "tahun": tahun,
-                "nilai_s1": r1,
-                "nilai_s2": r2,
-                "nilai_s3": r3,
-                "hasil": hasil,
+                "nilai_s1": _round2(r1),
+                "nilai_s2": _round2(r2),
+                "nilai_s3": _round2(r3),
+                "hasil": _round2(hasil),
                 "status": "SUCCESS",
                 "error": "",
             })

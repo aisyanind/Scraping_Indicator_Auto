@@ -2157,6 +2157,7 @@ function statusLabel(status) {
     'LINK_TIDAK_LENGKAP': 'Link Tidak Lengkap',
     'DATA_TIDAK_ADA': 'Data Tidak Ada',
     'SUMBER_PERLU_LOGIN': 'Perlu Login',
+    'SUMBER_TERBLOKIR': 'Sumber Terblokir',
     'PENDING': 'Menunggu',
     'PROCESSING': 'Diproses',
     'CANCEL_REQUESTED': 'Menghentikan…',
@@ -2367,6 +2368,7 @@ function statusBadgeClass(status) {
   if (s === 'PENDING' || s === 'PROCESSING' || s === 'CANCEL_REQUESTED' || s === 'REVIEW') return 'badge-pending';
   if (s === 'LINK_TIDAK_LENGKAP' || s === 'NEED_PARSER') return 'badge-warning';
   if (s === 'SUMBER_PERLU_LOGIN') return 'badge-login';
+  if (s === 'SUMBER_TERBLOKIR') return 'badge-warning';
   if (s === 'DATA_TIDAK_ADA') return 'badge-ink';
   return '';
 }

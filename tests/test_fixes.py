@@ -380,11 +380,80 @@ def test_flip_pdf_maps_repeated_values_in_ten_year_chart(monkeypatch):
 
 def test_retryable_statuses():
     """Status final tidak di-retry; status transient berhak retry."""
-    for status in ("SUCCESS", "REVIEW", "DATA_TIDAK_ADA", "SUMBER_PERLU_LOGIN"):
+    for status in (
+        "SUCCESS",
+        "REVIEW",
+        "DATA_TIDAK_ADA",
+        "SUMBER_PERLU_LOGIN",
+        "SUMBER_TERBLOKIR",
+    ):
         assert _is_retryable_status(status) is False
 
     for status in ("NEED_PARSER", "LINK_TIDAK_LENGKAP", "LEGACY_FAILED"):
         assert _is_retryable_status(status) is True
+
+
+def test_error_result_maps_cloudflare_block():
+    """403/Cloudflare harus menjadi SUMBER_TERBLOKIR, bukan NEED_PARSER."""
+    error_403 = RuntimeError(
+        "403 Client Error: Forbidden for url: "
+        "https://perpustakaan.bappenas.go.id/x.pdf"
+    )
+    result = _error_result(error_403, "ibei")
+    assert result.status == "SUMBER_TERBLOKIR"
+
+    error_blocked = RuntimeError(
+        "SOURCE_BLOCKED: Chrome tidak bisa mengunduh PDF "
+        "(terblokir proteksi Cloudflare)."
+    )
+    result = _error_result(error_blocked, "ibei")
+    assert result.status == "SUMBER_TERBLOKIR"
+    assert "SOURCE_BLOCKED" in result.message
+
+
+def test_blocked_summary_includes_detail():
+    """Ringkasan SUMBER_TERBLOKIR menyertakan detail error asli."""
+    summary = _build_failure_summary(
+        [
+            {
+                "tahun": 2024,
+                "source": 1,
+                "status": "SUMBER_TERBLOKIR",
+                "message": "403 Client Error: Forbidden for url: ...",
+            }
+        ],
+        used_sources={1},
+        regions=["Prov. Kalimantan Selatan"],
+    )
+
+    assert "situs sumber memblokir akses otomatis" in summary
+    assert "403 Client Error" in summary
+
+
+def test_process_indicator_job_blocked_no_retry(monkeypatch):
+    """SUMBER_TERBLOKIR tidak di-retry dan tampil sebagai status final."""
+    from engine import run_indicator
+
+    calls = []
+
+    def blocked(**kwargs):
+        calls.append(1)
+        result = _FakeResult("SUMBER_TERBLOKIR")
+        result.message = "403 Client Error: Forbidden for url: ..."
+        return result
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", blocked)
+
+    import time as _time
+    monkeypatch.setattr(_time, "sleep", lambda *_: None)
+
+    job = _make_job()
+    output = process_indicator_job(job)
+
+    assert len(calls) == 1
+    assert output["status"] == "SUMBER_TERBLOKIR"
+    assert "memblokir akses otomatis" in output["failure_summary"]
+    assert "403 Client Error" in output["failure_summary"]
 
 
 def _make_job(**overrides):

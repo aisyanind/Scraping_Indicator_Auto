@@ -339,6 +339,7 @@ def scrape_source_auto(
             "LINK_TIDAK_LENGKAP",
             "DATA_TIDAK_ADA",
             "SUMBER_PERLU_LOGIN",
+            "SUMBER_TERBLOKIR",
         }
     ):
         return legacy

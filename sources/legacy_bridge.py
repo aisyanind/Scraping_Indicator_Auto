@@ -81,6 +81,7 @@ def _error_result(error, source, status="LEGACY_FAILED", confidence=0.0):
 
     Konversi otomatis berdasarkan pesan error:
       - SOURCE_UNAVAILABLE / *_UnavailableError -> DATA_TIDAK_ADA
+      - SOURCE_BLOCKED / Cloudflare / 403       -> SUMBER_TERBLOKIR
       - SOURCE_NEED_LOGIN / 401                 -> SUMBER_PERLU_LOGIN
       - SOURCE_LINK_TIDAK_LENGKAP               -> LINK_TIDAK_LENGKAP
     """
@@ -99,6 +100,14 @@ def _error_result(error, source, status="LEGACY_FAILED", confidence=0.0):
         or "tidak memiliki 12 key bulan" in text
     ):
         detected = "DATA_TIDAK_ADA"
+
+    elif (
+        "SOURCE_BLOCKED" in text
+        or "Cloudflare" in text
+        or "403 Client Error" in text
+        or "terblokir" in text.lower()
+    ):
+        detected = "SUMBER_TERBLOKIR"
 
     elif (
         "SOURCE_NEED_LOGIN" in text

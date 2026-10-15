@@ -6,6 +6,10 @@ from urllib.parse import urljoin
 import pdfplumber
 import requests
 
+from browser_fetch import (
+    download_pdf_via_browser,
+    render_html_via_browser,
+)
 from utils import REQUEST_HEADERS, SCRAPE_CACHE, format_id
 
 
@@ -98,16 +102,27 @@ def find_latest_ibei_pdf_url(session=None):
 
     requester = session if session is not None else requests
 
-    response = requester.get(
-        BAPPENAS_SEARCH_URL,
-        headers=REQUEST_HEADERS,
-        timeout=30,
-    )
-    response.raise_for_status()
+    try:
+        response = requester.get(
+            BAPPENAS_SEARCH_URL,
+            headers=REQUEST_HEADERS,
+            timeout=30,
+        )
+        response.raise_for_status()
+        html = response.text
+    except Exception as error:
+        print(
+            "    [IBEI] Halaman pencarian gagal diambil "
+            f"({type(error).__name__}); coba via Chrome..."
+        )
+        html = render_html_via_browser(
+            BAPPENAS_SEARCH_URL,
+            tag="IBEI",
+        )
 
     matches = re.findall(
         r'href\s*=\s*["\']([^"\']+\.pdf(?:\?[^"\']*)?)["\']',
-        response.text,
+        html,
         flags=re.IGNORECASE,
     )
 
@@ -202,7 +217,7 @@ def get_ibei_pdf_bytes(source_url=""):
         urls_to_try.append(KNOWN_PDF_URL)
 
     urls_to_try = list(dict.fromkeys(urls_to_try))
-    last_error = None
+    errors = []
 
     for pdf_url in urls_to_try:
         try:
@@ -211,22 +226,78 @@ def get_ibei_pdf_bytes(source_url=""):
             return content
 
         except Exception as error:
-            last_error = error
+            errors.append(error)
             print(f"    [IBEI] Gagal dari URL ini: {error}")
+
+    # 3b. Requests diblokir Cloudflare -> unduh via Chrome.
+    for pdf_url in urls_to_try:
+        try:
+            content = download_pdf_via_browser(pdf_url, tag="IBEI")
+            SCRAPE_CACHE[cache_key] = content
+            return content
+
+        except Exception as error:
+            errors.append(error)
+            print(f"    [IBEI] Gagal via Chrome: {error}")
 
     # 4. Fallback pencarian publikasi Bappenas.
     try:
         fallback_url = find_latest_ibei_pdf_url(session)
-        content = download_pdf_url(session, fallback_url)
+
+        try:
+            content = download_pdf_url(session, fallback_url)
+        except Exception:
+            content = download_pdf_via_browser(
+                fallback_url,
+                tag="IBEI",
+            )
+
         SCRAPE_CACHE[cache_key] = content
         return content
 
     except Exception as error:
-        raise RuntimeError(
-            "PDF IBEI gagal diperoleh dari file lokal maupun Bappenas. "
-            f"Error terakhir: {error}. "
-            f"Error URL sebelumnya: {last_error}"
-        ) from error
+        errors.append(error)
+        raise RuntimeError(_build_final_pdf_error(errors)) from error
+
+
+_BLOCK_MARKERS = (
+    "SOURCE_BLOCKED",
+    "403 Client Error",
+    "Cloudflare",
+    "terblokir",
+)
+
+
+def _build_final_pdf_error(errors):
+    lines = []
+
+    for error in errors:
+        if error is None:
+            continue
+
+        first_line = str(error).strip().splitlines()
+        text = (first_line[0] if first_line else str(error))[:300]
+
+        if text:
+            lines.append(text)
+
+    blocked = any(
+        any(marker in text for marker in _BLOCK_MARKERS)
+        for text in lines
+    )
+
+    if blocked:
+        header = (
+            "SOURCE_BLOCKED: PDF IBEI terblokir proteksi "
+            "Cloudflare (403) di semua sumber."
+        )
+    else:
+        header = (
+            "PDF IBEI gagal diperoleh dari file lokal "
+            "maupun Bappenas."
+        )
+
+    return "\n".join([header] + lines)
 
 
 def extract_ibei_kalsel(pdf_bytes, tahun):
@@ -339,6 +410,16 @@ def scrape_ibei(url, tahun, description):
     """
 
     tahun = int(tahun)
+
+    # Cek tahun SEBELUM download: laporan IBEI hanya memuat satu tahun.
+    # Menghindari percobaan unduh yang sia-sia untuk tahun lain.
+    if tahun != IBEI_REPORT_YEAR:
+        raise RuntimeError(
+            "SOURCE_UNAVAILABLE: "
+            "Laporan IBEI yang tersedia saat ini "
+            f"memuat data tahun {IBEI_REPORT_YEAR}, "
+            f"bukan tahun {tahun}."
+        )
 
     cache_key = (
         "ibei_kalsel",

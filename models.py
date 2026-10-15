@@ -61,6 +61,7 @@ def normalize_kode(value) -> str:
 # LINK_TIDAK_LENGKAP   -> URL hanya portal/halaman daftar, bukan data langsung
 # DATA_TIDAK_ADA       -> data memang tidak tersedia di sumber utk tahun/scope
 # SUMBER_PERLU_LOGIN   -> sumber butuh autentikasi (401) atau akses khusus
+# SUMBER_TERBLOKIR     -> proteksi keamanan (Cloudflare 403) memblokir akses
 # UNAVAILABLE          -> (legacy) data tidak tersedia utk tahun tsb
 
 STATUS_SUKSES = "SUCCESS"
@@ -69,6 +70,7 @@ STATUS_NEED_PARSER = "NEED_PARSER"
 STATUS_LINK_TIDAK_LENGKAP = "LINK_TIDAK_LENGKAP"
 STATUS_DATA_TIDAK_ADA = "DATA_TIDAK_ADA"
 STATUS_SUMBER_PERLU_LOGIN = "SUMBER_PERLU_LOGIN"
+STATUS_SUMBER_TERBLOKIR = "SUMBER_TERBLOKIR"
 
 # Status yang TIDAK menghasilkan nilai (dianggap gagal per-sumber).
 STATUS_TANPA_NILAI = {
@@ -76,6 +78,7 @@ STATUS_TANPA_NILAI = {
     STATUS_LINK_TIDAK_LENGKAP,
     STATUS_DATA_TIDAK_ADA,
     STATUS_SUMBER_PERLU_LOGIN,
+    STATUS_SUMBER_TERBLOKIR,
 }
 
 

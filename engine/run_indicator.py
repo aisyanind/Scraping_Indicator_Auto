@@ -222,6 +222,7 @@ _NON_RETRYABLE_STATUSES = {
     "REVIEW",
     "DATA_TIDAK_ADA",
     "SUMBER_PERLU_LOGIN",
+    "SUMBER_TERBLOKIR",
 }
 
 
@@ -240,6 +241,10 @@ _FRIENDLY_REASONS = {
         "(bisa jadi halaman katalog)"
     ),
     "SUMBER_PERLU_LOGIN": "sumber membutuhkan login",
+    "SUMBER_TERBLOKIR": (
+        "situs sumber memblokir akses otomatis "
+        "(proteksi keamanan)"
+    ),
     "REVIEW": "data terbaca tetapi masih perlu ditinjau manual",
     "FAILED_FORMULA": (
         "nilai tidak bisa dihitung "
@@ -268,6 +273,14 @@ def _build_failure_summary(diagnostics, used_sources, regions):
 
         reason = _FRIENDLY_REASONS.get(status, "gagal mengambil data")
         label = f"sumber {source}: {reason}" if source else reason
+
+        # Untuk sumber terblokir, sertakan potongan error asli
+        # (mis. "403 Client Error: Forbidden") agar penyebab jelas.
+        if status == "SUMBER_TERBLOKIR":
+            detail = str(item.get("message") or "").strip()
+            if detail:
+                label = f"{label} ({detail[:120]})"
+
         tahun = str(item.get("tahun") or "-")
         bucket = per_year.setdefault(tahun, [])
         if label not in bucket:
@@ -535,6 +548,7 @@ def process_indicator_job(
                             "NEED_PARSER",
                             "DATA_TIDAK_ADA",
                             "LINK_TIDAK_LENGKAP",
+                            "SUMBER_TERBLOKIR",
                         }
                     ):
                         diagnostic["status"] = "FALLBACK"
@@ -717,6 +731,9 @@ def process_indicator_job(
 
     elif "SUMBER_PERLU_LOGIN" in statuses:
         final_status = "SUMBER_PERLU_LOGIN"
+
+    elif "SUMBER_TERBLOKIR" in statuses:
+        final_status = "SUMBER_TERBLOKIR"
 
     elif "LINK_TIDAK_LENGKAP" in statuses:
         final_status = "LINK_TIDAK_LENGKAP"

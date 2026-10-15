@@ -683,6 +683,7 @@ function updateJob_(jobId, status, progress, error, diagnostics) {
           'PARTIAL',
           'REVIEW',
           'NEED_PARSER',
+          'SUMBER_TERBLOKIR',
           'FAILED',
           'CANCELLED'
         ].includes(String(status).toUpperCase())

@@ -1,5 +1,7 @@
 import csv
 import re
+import threading
+import time
 from io import StringIO
 from urllib.parse import urlparse
 
@@ -12,6 +14,23 @@ NAMA_PROVINSI = "Prov. Kalimantan Selatan"
 
 # Cache dipisahkan per URL sumber agar aman bila nanti dataset berubah.
 _TABLE_CACHE = {}
+# Download single-flight: thread tahun berjalan paralel tidak boleh
+# memukul endpoint download bersamaan (memicu rate-limit 500 portal).
+_TABLE_LOCK = threading.Lock()
+# Kegagalan download di-cache singkat agar thread lain tidak menjalankan
+# siklus retry panjang berturut-turut (bisa melewati JOB_TIMEOUT).
+_DOWNLOAD_FAILURE = {}
+_DOWNLOAD_FAILURE_TTL_SECONDS = 120
+
+# Portal Open Data Kalsel tidak stabil (500 sesaat, proteksi Cloudflare)
+# dan men-rate-limit bila dipukul beruntun; jeda antar percobaan
+# exponential (3, 6, 12, 24, 30 detik) agar masuk masa cooldown portal.
+_CSV_DOWNLOAD_ATTEMPTS = 6
+_CSV_RETRY_BACKOFF_MAX_SECONDS = 30
+
+
+def _retry_delay_seconds(attempt):
+    return min(3 * (2 ** (attempt - 1)), _CSV_RETRY_BACKOFF_MAX_SECONDS)
 
 
 def _parse_index_number(value):
@@ -142,33 +161,68 @@ def _download_iklh_csv(source_url):
         f"    [IKLH AUTO] Download CSV: {download_url}"
     )
 
-    response = requests.get(
-        download_url,
-        headers=_request_headers(source_url),
-        timeout=60,
-    )
-    response.raise_for_status()
+    # Portal Open Data Kalsel sering memberi HTTP 500
+    # ("Failed download dataset") atau halaman Cloudflare sesaat;
+    # percobaan ulang dengan jeda menaikkan peluang berhasil.
+    html_error = None
 
-    text = response.text
+    for attempt in range(1, _CSV_DOWNLOAD_ATTEMPTS + 1):
+        try:
+            response = requests.get(
+                download_url,
+                headers=_request_headers(source_url),
+                timeout=60,
+            )
+            response.raise_for_status()
+        except requests.RequestException as error:
+            html_error = None
+            print(
+                "    [IKLH AUTO] Download CSV gagal "
+                f"(percobaan {attempt}/{_CSV_DOWNLOAD_ATTEMPTS}): "
+                f"{error}"
+            )
+            if attempt < _CSV_DOWNLOAD_ATTEMPTS:
+                time.sleep(_retry_delay_seconds(attempt))
+            continue
 
-    # Deteksi sederhana agar halaman HTML tidak salah diparse sebagai CSV.
-    content_type = (
-        response.headers
-        .get("Content-Type", "")
-        .lower()
-    )
+        text = response.text
 
-    if (
-        "text/html" in content_type
-        and "<html" in text[:500].lower()
-    ):
-        raise RuntimeError(
-            "URL sumber mengembalikan HTML, bukan CSV. "
-            "Pastikan URL menunjuk ke halaman dataset Open Data Kalsel "
-            "yang memiliki ID dataset, atau endpoint download CSV."
+        # Deteksi sederhana agar halaman HTML tidak salah diparse
+        # sebagai CSV (halaman proteksi Cloudflare, dst.).
+        content_type = (
+            response.headers
+            .get("Content-Type", "")
+            .lower()
         )
 
-    return text
+        if (
+            "text/html" in content_type
+            and "<html" in text[:500].lower()
+        ):
+            html_error = RuntimeError(
+                "URL sumber mengembalikan HTML, bukan CSV. "
+                "Pastikan URL menunjuk ke halaman dataset Open Data "
+                "Kalsel yang memiliki ID dataset, atau endpoint "
+                "download CSV."
+            )
+            print(
+                "    [IKLH AUTO] Download CSV mengembalikan HTML "
+                f"(percobaan {attempt}/{_CSV_DOWNLOAD_ATTEMPTS})."
+            )
+            if attempt < _CSV_DOWNLOAD_ATTEMPTS:
+                time.sleep(_retry_delay_seconds(attempt))
+            continue
+
+        return text
+
+    if html_error is not None:
+        raise html_error
+
+    raise RuntimeError(
+        "Portal Open Data Kalsel gagal mengunduh CSV "
+        f"setelah {_CSV_DOWNLOAD_ATTEMPTS} percobaan "
+        f"(download: {download_url})."
+    )
 
 
 def _parse_iklh_table(csv_text):
@@ -212,12 +266,11 @@ def _parse_iklh_table(csv_text):
         )
 
     try:
-        kd_wil_index = header.index(
-            "Kd_wil"
-        )
-        nama_index = header.index(
-            "Kabupaten/kota"
-        )
+        # Header portal bisa berubah kapitalisasi antar rilis
+        # ("Kd_wil"/"Kabupaten/kota" -> "kd_wil"/"kabupaten/kota").
+        lower_header = [cell.lower() for cell in header]
+        kd_wil_index = lower_header.index("kd_wil")
+        nama_index = lower_header.index("kabupaten/kota")
 
     except ValueError as error:
         raise RuntimeError(
@@ -287,16 +340,39 @@ def _get_table(source_url):
             "URL sumber IKLH kosong."
         )
 
-    if cache_key not in _TABLE_CACHE:
-        csv_text = _download_iklh_csv(
-            cache_key
-        )
+    if cache_key in _TABLE_CACHE:
+        return _TABLE_CACHE[cache_key]
 
-        _TABLE_CACHE[
-            cache_key
-        ] = _parse_iklh_table(
-            csv_text
-        )
+    with _TABLE_LOCK:
+        if cache_key in _TABLE_CACHE:
+            return _TABLE_CACHE[cache_key]
+
+        failure = _DOWNLOAD_FAILURE.get(cache_key)
+        if (
+            failure is not None
+            and time.monotonic() - failure[1]
+            < _DOWNLOAD_FAILURE_TTL_SECONDS
+        ):
+            raise failure[0]
+
+        try:
+            csv_text = _download_iklh_csv(
+                cache_key
+            )
+
+            _TABLE_CACHE[
+                cache_key
+            ] = _parse_iklh_table(
+                csv_text
+            )
+        except Exception as error:
+            _DOWNLOAD_FAILURE[cache_key] = (
+                error,
+                time.monotonic(),
+            )
+            raise
+
+        _DOWNLOAD_FAILURE.pop(cache_key, None)
 
         print(
             f"    [IKLH AUTO] "

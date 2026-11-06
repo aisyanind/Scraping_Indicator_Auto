@@ -371,6 +371,123 @@
       -webkit-box-orient: vertical;
     }
 
+    .link-suggest {
+      position: fixed;
+      z-index: 60;
+      width: min(520px, 92vw);
+      max-height: 320px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid var(--orange-tint-strong);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.12));
+    }
+
+    .link-suggest-item {
+      display: block;
+      width: 100%;
+      padding: var(--space-sm) var(--space-md);
+      border: 0;
+      border-bottom: 1px solid var(--orange-tint);
+      background: #fff;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+    }
+
+    .link-suggest-item:last-child {
+      border-bottom: 0;
+    }
+
+    .link-suggest-item:hover {
+      background: var(--orange-tint);
+    }
+
+    .link-suggest-empty {
+      padding: var(--space-md);
+      font-size: var(--fs-sm);
+      color: var(--ink-soft);
+    }
+
+    .link-suggest-item .chip-title {
+      display: block;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--orange-darker);
+      line-height: 1.3;
+    }
+
+    .link-suggest-item .chip-url {
+      display: block;
+      font-size: var(--fs-xs);
+      color: var(--ink-soft);
+      word-break: break-all;
+      line-height: 1.3;
+      margin-top: 2px;
+    }
+
+    .link-suggest-item .chip-usedby {
+      display: block;
+      font-size: var(--fs-xs);
+      color: var(--ink-soft);
+      line-height: 1.3;
+      margin-top: 2px;
+    }
+
+    .link-suggest-item .chip-stat {
+      display: inline-block;
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      padding: 1px 8px;
+      border-radius: 999px;
+      line-height: 1.4;
+      margin-top: 3px;
+    }
+
+    .link-suggest-item .chip-ok {
+      background: rgba(22, 163, 74, 0.12);
+      color: #15803d;
+    }
+
+    .link-suggest-item .chip-warn {
+      background: rgba(217, 119, 6, 0.14);
+      color: #b45309;
+    }
+
+    .link-suggest-item .chip-new {
+      background: rgba(100, 116, 139, 0.12);
+      color: var(--ink-soft);
+    }
+
+    .source-history-chip .chip-stat {
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      padding: 1px 8px;
+      border-radius: 999px;
+      line-height: 1.4;
+    }
+
+    .source-history-chip .chip-ok {
+      background: rgba(22, 163, 74, 0.12);
+      color: #15803d;
+    }
+
+    .source-history-chip .chip-warn {
+      background: rgba(217, 119, 6, 0.14);
+      color: #b45309;
+    }
+
+    .source-history-chip .chip-new {
+      background: rgba(100, 116, 139, 0.12);
+      color: var(--ink-soft);
+    }
+
+    .source-history-chip .chip-usedby {
+      font-size: var(--fs-xs);
+      color: var(--ink-soft);
+      line-height: 1.3;
+    }
+
     .source-remove {
       position: absolute;
       top: var(--space-sm);
@@ -1292,10 +1409,12 @@
         <div class="source-block" data-index="1">
           <div class="full">
             <label for="sourceUrl1">Sumber 1</label>
-            <input class="source-url" id="sourceUrl1" placeholder="https://&hellip; atau klik link riwayat di bawah">
+            <input class="source-url" id="sourceUrl1" placeholder="https://&hellip; atau klik untuk lihat riwayat link" autocomplete="off">
           </div>
         </div>
       </div>
+
+      <div id="linkSuggest" class="link-suggest hidden"></div>
 
       <div class="full hidden" id="sourceHistoryBox">
         <label>Link yang pernah dipakai indikator ini</label>
@@ -1637,6 +1756,7 @@ function submitForm() {
 
 var MAX_SOURCES = 3;
 var SOURCE_CATALOG = [];
+var LINK_CATALOG = [];
 
 function addSource() {
   var container = document.getElementById('sourceContainer');
@@ -1650,7 +1770,7 @@ function addSource() {
   block.innerHTML =
     '<button class="source-remove" type="button" onclick="removeSource(this)">&times; Hapus sumber</button>'
     + '<div class="full"><label for="sourceUrl' + next + '">Sumber ' + next + '</label>'
-    + '<input class="source-url" id="sourceUrl' + next + '" placeholder="https://&hellip; atau klik link riwayat di bawah"></div>';
+    + '<input class="source-url" id="sourceUrl' + next + '" placeholder="https://&hellip; atau klik untuk lihat riwayat link" autocomplete="off"></div>';
   container.appendChild(block);
   updateAddSourceButton();
 }
@@ -1723,7 +1843,226 @@ function handleIndikatorPilih() {
   document.getElementById('kode').value = kode;
   document.getElementById('nama_indikator').value = nama;
 
+  if (LINK_SUGGEST_INPUT && LINK_SUGGEST_OPEN) {
+    showLinkSuggest(LINK_SUGGEST_INPUT);
+  }
   loadSourceCatalog(kode);
+}
+
+function loadLinkCatalog() {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) {
+        LINK_CATALOG = [];
+      } else {
+        LINK_CATALOG = result.links || [];
+      }
+      if (LINK_SUGGEST_INPUT && LINK_SUGGEST_OPEN) {
+        showLinkSuggest(LINK_SUGGEST_INPUT);
+      }
+      if (document.getElementById('kode').value) {
+        loadSourceCatalog(document.getElementById('kode').value);
+      }
+    })
+    .withFailureHandler(function() {
+      LINK_CATALOG = [];
+    })
+    .getLinkCatalog();
+}
+
+function linkMatchesKode(item, kode) {
+  var target = String(kode || '').trim().toLowerCase();
+  if (!target) return false;
+  var indicators = item.indicators || [];
+  for (var i = 0; i < indicators.length; i++) {
+    if (String(indicators[i].kode || '').trim().toLowerCase() === target) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function linkStatLabel(item) {
+  var ok = item.successCount || 0;
+  var fail = item.failCount || 0;
+
+  if (ok > 0) {
+    return {text: 'berhasil ' + ok + '\u00d7', cls: 'chip-ok'};
+  }
+  if (fail > 0) {
+    return {text: 'belum pernah berhasil', cls: 'chip-warn'};
+  }
+  return {text: 'belum pernah dicoba', cls: 'chip-new'};
+}
+
+function linkUsedByText(item, currentKode) {
+  var current = String(currentKode || '').trim().toLowerCase();
+  var codes = (item.indicators || []).map(function(ind) {
+    return String(ind.kode || '').trim();
+  }).filter(Boolean);
+
+  if (!codes.length) {
+    return {prefix: 'link baru, ', text: 'belum dipakai indikator mana pun'};
+  }
+
+  var others = codes.filter(function(k) {
+    return k.toLowerCase() !== current;
+  });
+  var same = codes.length - others.length;
+  var shown = others.slice(0, 3).join(', ');
+  if (others.length > 3) shown += ' +' + (others.length - 3);
+
+  var text = shown || codes.slice(0, 3).join(', ');
+  return {prefix: 'dipakai: ', text: text + (same ? ' (' + same + ' indikator ini)' : '')};
+}
+
+/* ====== PANEL SARAN LINK (dropdown kolom Sumber) ====== */
+
+var LINK_SUGGEST_INPUT = null;
+var LINK_SUGGEST_OPEN = false;
+var LINK_SUGGEST_ITEMS = [];
+var LINK_SUGGEST_TIMER = null;
+
+function setupLinkSuggest() {
+  var panel = document.getElementById('linkSuggest');
+  if (!panel) return;
+  document.body.appendChild(panel);
+
+  var container = document.getElementById('sourceContainer');
+  if (!container) return;
+
+  container.addEventListener('focusin', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('source-url')) {
+      clearTimeout(LINK_SUGGEST_TIMER);
+      showLinkSuggest(e.target);
+    }
+  });
+
+  container.addEventListener('focusout', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('source-url')) {
+      clearTimeout(LINK_SUGGEST_TIMER);
+      LINK_SUGGEST_TIMER = setTimeout(hideLinkSuggest, 160);
+    }
+  });
+
+  container.addEventListener('input', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('source-url')) {
+      showLinkSuggest(e.target);
+    }
+  });
+
+  container.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      hideLinkSuggest();
+      if (e.target.blur) e.target.blur();
+    }
+  });
+
+  panel.addEventListener('mousedown', function(e) {
+    // Cegah blur input sebelum item sempat diklik.
+    e.preventDefault();
+  });
+}
+
+function showLinkSuggest(input) {
+  var panel = document.getElementById('linkSuggest');
+  if (!panel || !input) return;
+
+  LINK_SUGGEST_INPUT = input;
+  LINK_SUGGEST_OPEN = true;
+
+  var query = String(input.value || '').trim().toLowerCase();
+  var currentKode = String((document.getElementById('kode') || {}).value || '').trim();
+
+  var filtered = LINK_CATALOG.filter(function(item) {
+    if (!query) return true;
+    var url = String(item.url || '').toLowerCase();
+    var desc = String(item.desc || '').toLowerCase();
+    var codes = (item.indicators || []).map(function(ind) {
+      return String(ind.kode || '').toLowerCase();
+    });
+    if (url.indexOf(query) >= 0 || desc.indexOf(query) >= 0) return true;
+    for (var i = 0; i < codes.length; i++) {
+      if (codes[i].indexOf(query) >= 0) return true;
+    }
+    return false;
+  });
+
+  if (currentKode) {
+    filtered.sort(function(a, b) {
+      var am = linkMatchesKode(a, currentKode) ? 0 : 1;
+      var bm = linkMatchesKode(b, currentKode) ? 0 : 1;
+      return am - bm;
+    });
+  }
+
+  LINK_SUGGEST_ITEMS = filtered.slice(0, 10);
+
+  if (!LINK_SUGGEST_ITEMS.length) {
+    panel.innerHTML = '<div class="link-suggest-empty">Tidak ada link cocok'
+      + (query ? ' untuk &ldquo;' + escapeHtml(query) + '&rdquo;' : '')
+      + '.</div>';
+  } else {
+    panel.innerHTML = LINK_SUGGEST_ITEMS.map(function(item, index) {
+      var desc = String(item.desc || '').trim();
+      var url = String(item.url || '').trim();
+      var title = desc || shortenUrl(url);
+      var sub = desc ? shortenUrl(url) : '';
+      var stat = linkStatLabel(item);
+      var used = linkUsedByText(item, currentKode);
+
+      return '<button type="button" class="link-suggest-item" '
+        + 'onmousedown="event.preventDefault()" '
+        + 'onclick="pickLinkSuggest(' + index + ')" '
+        + 'title="' + escapeAttr(url) + '">'
+        + '<span class="chip-title">' + escapeHtml(title) + '</span>'
+        + (sub ? '<span class="chip-url">' + escapeHtml(sub) + '</span>' : '')
+        + '<span class="chip-usedby">'
+        + escapeHtml(used.prefix + used.text) + '</span>'
+        + '<span class="chip-stat ' + stat.cls + '">'
+        + escapeHtml(stat.text) + '</span>'
+        + '</button>';
+    }).join('');
+  }
+
+  var rect = input.getBoundingClientRect();
+  var width = Math.max(rect.width, 320);
+  panel.style.width = width + 'px';
+  var below = rect.bottom + 4;
+  panel.style.left = rect.left + 'px';
+  panel.style.top = below + 'px';
+  panel.classList.remove('hidden');
+
+  // Kalau ruang ke bawah tidak cukup, tampilkan ke atas.
+  requestAnimationFrame(function() {
+    var panelRect = panel.getBoundingClientRect();
+    if (panelRect.bottom > window.innerHeight - 8) {
+      var above = rect.top - panelRect.height - 4;
+      if (above >= 8) {
+        panel.style.top = above + 'px';
+      } else {
+        panel.style.top = Math.max(8, window.innerHeight - panelRect.height - 8) + 'px';
+      }
+    }
+  });
+}
+
+function hideLinkSuggest() {
+  var panel = document.getElementById('linkSuggest');
+  if (panel) panel.classList.add('hidden');
+  LINK_SUGGEST_OPEN = false;
+  LINK_SUGGEST_INPUT = null;
+}
+
+function pickLinkSuggest(index) {
+  var item = LINK_SUGGEST_ITEMS[index];
+  if (!item || !item.url) return;
+
+  if (LINK_SUGGEST_INPUT) {
+    LINK_SUGGEST_INPUT.value = item.url;
+    LINK_SUGGEST_INPUT.focus();
+  }
+  hideLinkSuggest();
 }
 
 function loadSourceCatalog(kode) {
@@ -1731,6 +2070,14 @@ function loadSourceCatalog(kode) {
   if (!kode) {
     SOURCE_CATALOG = [];
     if (box) box.classList.add('hidden');
+    return;
+  }
+
+  if (LINK_CATALOG.length) {
+    SOURCE_CATALOG = LINK_CATALOG.filter(function(item) {
+      return linkMatchesKode(item, kode);
+    });
+    renderSourceHistory();
     return;
   }
 
@@ -1771,17 +2118,39 @@ function renderSourceHistory() {
 
   box.classList.remove('hidden');
 
+  var currentKode = String(
+    (document.getElementById('kode') || {}).value || ''
+  ).trim().toLowerCase();
+
   container.innerHTML = SOURCE_CATALOG.map(function(item, index) {
     var desc = String(item.desc || '').trim();
     var url = String(item.url || '').trim();
     var title = desc || shortenUrl(url);
     var sub = desc ? shortenUrl(url) : '';
+    var stat = linkStatLabel(item);
+
+    var others = (item.indicators || []).filter(function(ind) {
+      return String(ind.kode || '').trim().toLowerCase() !== currentKode;
+    }).map(function(ind) {
+      return String(ind.kode || '').trim();
+    }).filter(Boolean);
+
+    var otherLine = '';
+    if (others.length) {
+      var shown = others.slice(0, 3).join(', ');
+      var more = others.length > 3 ? ' (+' + (others.length - 3) + ')' : '';
+      otherLine = '<span class="chip-usedby">juga dipakai: '
+        + escapeHtml(shown + more) + '</span>';
+    }
 
     return '<button type="button" class="source-history-chip" '
       + 'onclick="pickSourceHistory(' + index + ')" '
       + 'title="' + escapeAttr(url) + '">'
+      + '<span class="chip-stat ' + stat.cls + '">'
+      + escapeHtml(stat.text) + '</span>'
       + '<span class="chip-title">' + escapeHtml(title) + '</span>'
       + (sub ? '<span class="chip-url">' + escapeHtml(sub) + '</span>' : '')
+      + otherLine
       + '</button>';
   }).join('');
 }
@@ -2407,6 +2776,8 @@ setupYearOptions();
 handleWilayahScope();
 updateAddSourceButton();
 loadIndicatorCatalog();
+setupLinkSuggest();
+loadLinkCatalog();
 refreshDashboard();
 setInterval(refreshDashboard, 10000);
 

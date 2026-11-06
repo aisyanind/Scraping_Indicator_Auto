@@ -15,6 +15,63 @@ REGION_HINTS = {
 }
 YEAR_HINTS = {"tahun", "year", "periode", "period"}
 
+# Term metric yang terlalu umum muncul di halaman mana pun (judul dokumen,
+# narasi pembuka). Kehadiran saja di context TIDAK cukup bukti bahwa tabel
+# memang membahas indikator yang diminta.
+GENERIC_METRIC_TERMS = {
+    "jumlah", "total", "semua", "seluruh", "tahun", "angka", "nilai",
+    "data", "persentase", "proporsi", "rasio", "rata", "maks", "min",
+    "awal", "akhir",
+}
+
+
+def _specific_metric_terms(terms):
+    """Term metric yang bersifat khas indikator (bukan kata generik/angka)."""
+    specific = []
+    for term in terms or []:
+        norm = normalize_text(term)
+        if not norm or norm in GENERIC_METRIC_TERMS:
+            continue
+        if re.fullmatch(r"[\d.,]+", norm):
+            continue
+        if norm not in specific:
+            specific.append(norm)
+    return specific
+
+
+def _frame_metric_relevant(context: str, columns, terms) -> bool:
+    """
+    Guard anti-sukses-salah: frame hanya layak dipertimbangkan bila ada
+    minimal satu term metric KHAS indikator yang match di context halaman
+    atau nama kolom. Frame tanpa context (CSV/Excel tanpa attrs) lolos
+    tanpa penilaian — pengetatan hanya untuk sumber yang membawa context.
+
+    Contoh yang ditolak: tabel "Jumlah rumah sakit" saat indikator
+    "Jumlah kasus Tuberkulosis" (context hanya memuat 'jumlah' + tahun).
+    """
+    specific = _specific_metric_terms(terms)
+    if not specific or not str(context or "").strip():
+        return True
+
+    haystack = " ".join(
+        [str(context or ""), *(str(col) for col in columns)]
+    )
+    haystack = normalize_text(haystack)
+    if not haystack:
+        return True
+
+    for raw_term in terms or []:
+        norm_term = normalize_text(raw_term)
+        if norm_term not in specific:
+            continue
+        candidates = [norm_term] + [
+            normalize_text(syn)
+            for syn in METRIC_SYNONYMS.get(raw_term, [])
+        ]
+        if any(candidate and candidate in haystack for candidate in candidates):
+            return True
+    return False
+
 
 def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -87,21 +144,29 @@ def _extract_year_from_column(col_name):
     return None
 
 
-def _metric_score(column: str, terms: list[str]) -> float:
+def _metric_score(
+    column: str,
+    terms: list[str],
+    context: str = "",
+) -> float:
     c = normalize_text(column)
     if not terms:
         return 0.25
 
-    hits = 0
-    for term in terms:
-        if term in c:
-            hits += 1
-            continue
-        synonyms = METRIC_SYNONYMS.get(term, [])
-        if any(syn in c for syn in synonyms):
-            hits += 0.7
+    def score_text(text):
+        hits = 0.0
+        for term in terms:
+            if term in text:
+                hits += 1
+                continue
+            synonyms = METRIC_SYNONYMS.get(term, [])
+            if any(syn in text for syn in synonyms):
+                hits += 0.7
+        return hits / max(len(terms), 1)
 
-    return hits / max(len(terms), 1)
+    column_score = score_text(c)
+    context_score = score_text(normalize_text(context))
+    return max(column_score, context_score)
 
 
 def _numeric_series(series: pd.Series) -> pd.Series:
@@ -159,12 +224,29 @@ def extract_from_dataframes(
         ]
 
         numeric_candidates = []
+        metric_context = str(
+            getattr(raw_df, "attrs", {}).get("metric_context", "")
+        )
+        if not _frame_metric_relevant(
+            metric_context,
+            df.columns,
+            instruction.metric_terms,
+        ):
+            continue
         for col in df.columns:
             numeric = _numeric_series(df[col])
             ratio = numeric.notna().mean()
             if ratio >= 0.35:
                 numeric_candidates.append(
-                    (col, numeric, _metric_score(col, instruction.metric_terms))
+                    (
+                        col,
+                        numeric,
+                        _metric_score(
+                            col,
+                            instruction.metric_terms,
+                            metric_context,
+                        ),
+                    )
                 )
 
         if not numeric_candidates:
@@ -202,6 +284,8 @@ def extract_from_dataframes(
             work["__value__"] = numeric_series
 
             year_conf = 0.0
+            if value_col in year_header_cols:
+                year_conf = 0.20
             if year_cols:
                 matched_year = pd.Series(False, index=work.index)
                 for col in year_cols:
@@ -254,6 +338,29 @@ def extract_from_dataframes(
                     region_values[wide_target] = float(values.iloc[0])
                     region_conf = 0.35
             elif region_cols:
+                # Sel yang memuat nama lebih dari satu target wilayah
+                # (sel gabungan multi-baris, mis. Tabel 56) ambigu: value
+                # tidak bisa dipastikan milik wilayah mana — digit kolom
+                # "NO" saja bisa menyatu jadi satu angka raksasa.
+                ambiguous_by_col = {}
+                for col in region_cols:
+                    normalized_col = work[col].map(normalize_region)
+                    hits = pd.Series(0, index=work.index)
+                    for other in instruction.target_wilayahs:
+                        other_bare = re.sub(
+                            r"^(prov\.|kab\.|kota)\s+",
+                            "",
+                            normalize_region(other),
+                        )
+                        if not other_bare:
+                            continue
+                        hits = hits + normalized_col.str.contains(
+                            re.escape(other_bare),
+                            regex=True,
+                            na=False,
+                        ).astype(int)
+                    ambiguous_by_col[col] = hits >= 2
+
                 for target in instruction.target_wilayahs:
                     target_norm = normalize_region(target)
                     found_value = None
@@ -277,6 +384,7 @@ def extract_from_dataframes(
                                     regex=True,
                                     na=False,
                                 )
+                                mask = mask & ~ambiguous_by_col[col]
                                 exact = work[mask]
 
                             if not exact.empty:
@@ -295,11 +403,15 @@ def extract_from_dataframes(
             else:
                 values = work["__value__"].dropna()
                 if len(values) == 1:
+                    if instruction.wants_multi_wilayah:
+                        continue
                     region_values = {
                         instruction.target_wilayahs[0]: float(values.iloc[0])
                     }
                     region_conf = 0.20
                 elif total_row_value is not None:
+                    if instruction.wants_multi_wilayah:
+                        continue
                     region_values = {
                         instruction.target_wilayahs[0]: total_row_value
                     }
@@ -316,7 +428,10 @@ def extract_from_dataframes(
                 status="SUCCESS",
                 value=(
                     region_values
-                    if len(region_values) > 1
+                    if (
+                        instruction.wants_multi_wilayah
+                        or len(region_values) > 1
+                    )
                     else next(iter(region_values.values()))
                 ),
                 confidence=confidence,

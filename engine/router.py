@@ -1,6 +1,8 @@
 import re
 from urllib.parse import urlparse
 
+import requests
+
 from config import (
     AUTO_CONFIDENCE_THRESHOLD,
     REVIEW_CONFIDENCE_THRESHOLD,
@@ -23,7 +25,11 @@ from models import (
     ExtractionResult,
 )
 from sources.legacy_bridge import try_legacy_source
-from sources.bps_utils import parse_number_id
+from sources.bps_utils import (
+    extract_table_year,
+    parse_number_id,
+    with_year_param,
+)
 
 
 EXTRACTORS = {
@@ -85,6 +91,15 @@ def _is_bps_url(url):
         return False
 
 
+def _is_brin_url(url):
+    """Deteksi domain BRIN untuk menjalankan parser sumber sebelum heuristik."""
+    try:
+        host = (urlparse(str(url or "")).hostname or "").lower()
+        return host == "brin.go.id" or host.endswith(".brin.go.id")
+    except Exception:
+        return False
+
+
 def _try_bps_embedded_json(payload, instruction, tahun):
     """
     Untuk halaman BPS tabel baru yang menyematkan data sebagai JSON
@@ -110,6 +125,12 @@ def _try_bps_embedded_json(payload, instruction, tahun):
     lowered = html.lower()
 
     if "value_raw" not in html and "tahun_data" not in html:
+        return None
+
+    # Gerbang tahun: halaman harus memuat tahun yang diminta,
+    # kalau tidak payload bisa tahun lain (default) -> nilai salah.
+    page_year = extract_table_year(html)
+    if page_year is not None and int(page_year) != int(tahun):
         return None
 
     # Ekstrak value_raw BESERTA konteks di sekitarnya.
@@ -201,6 +222,11 @@ def _try_bps_next_data(payload, instruction, tahun):
         return None
 
     html = payload.content.decode("utf-8", "ignore")
+
+    # Gerbang tahun: payload __NEXT_DATA__ juga harus tahun diminta.
+    page_year = extract_table_year(html)
+    if page_year is not None and int(page_year) != int(tahun):
+        return None
 
     # Cari blok __NEXT_DATA__.
     match = re.search(
@@ -320,76 +346,163 @@ def scrape_source_auto(
         default_wilayah=wilayah,
     )
 
-    legacy = try_legacy_source(
-        url=url,
-        tahun=tahun,
-        description=description,
-        wilayah=wilayah,
-        kode=kode,
-        nama_indikator=nama_indikator,
-        sumber_2=sumber_2,
-        sumber_3=sumber_3,
-    )
+    # Untuk halaman BPS: selalu bawa ?year=<tahun> supaya payload
+    # benar-benar data tahun yang diminta (bukan tahun default).
+    fetch_url = url
+    if _is_bps_url(url):
+        fetch_url = with_year_param(url, tahun)
 
-    if (
-        legacy is not None
-        and legacy.status in {
+    try:
+        payload = fetch_and_detect(fetch_url)
+    except requests.RequestException:
+        legacy = try_legacy_source(
+            url=url,
+            tahun=tahun,
+            description=description,
+            wilayah=wilayah,
+            kode=kode,
+            nama_indikator=nama_indikator,
+            sumber_2=sumber_2,
+            sumber_3=sumber_3,
+        )
+        if legacy is not None and legacy.status in {
             "SUCCESS",
             "UNAVAILABLE",
             "LINK_TIDAK_LENGKAP",
             "DATA_TIDAK_ADA",
             "SUMBER_PERLU_LOGIN",
             "SUMBER_TERBLOKIR",
-        }
-    ):
-        return legacy
+        }:
+            return legacy
+        raise
 
-    payload = fetch_and_detect(url)
+    brin_result = None
+    if _is_brin_url(url):
+        brin_result = try_legacy_source(
+            url=url,
+            tahun=tahun,
+            description=description,
+            wilayah=wilayah,
+            kode=kode,
+            nama_indikator=nama_indikator,
+            sumber_2=sumber_2,
+            sumber_3=sumber_3,
+        )
+        if brin_result is not None and brin_result.status in {
+            "SUCCESS",
+            "UNAVAILABLE",
+            "LINK_TIDAK_LENGKAP",
+            "DATA_TIDAK_ADA",
+            "SUMBER_PERLU_LOGIN",
+            "SUMBER_TERBLOKIR",
+        }:
+            return brin_result
 
-    # Untuk halaman BPS: coba extract JSON embedded dulu sebelum
-    # generic extractor (lebih cepat, lebih akurat).
+    # Untuk halaman BPS: parser universal tabel dulu, adapter khusus
+    # (embedded JSON / __NEXT_DATA__) hanya jadi cadangan NEED_PARSER.
+    bps_pdf_result = None
+    bps_table_result = None
     if _is_bps_url(url):
+        # Universal: baca tabel BPS terstruktur (tahun + kolom +
+        # seluruh baris + konversi satuan) sebelum heuristik lama.
+        table_path = urlparse(str(url or "")).path.lower()
+        is_bps_table_listing = (
+            table_path.rstrip("/").endswith("/statistics-table")
+        )
+        if "/statistics-table/" in table_path or is_bps_table_listing:
+            from sources.bps_table_adapter import try_bps_table
+            template_result = try_bps_table(
+                url=fetch_url,
+                tahun=tahun,
+                description=description,
+                wilayah=wilayah,
+                nama_indikator=nama_indikator,
+            )
+            if template_result is not None:
+                if template_result.status in {
+                    "SUCCESS",
+                    "REVIEW",
+                    "DATA_TIDAK_ADA",
+                }:
+                    return _normalize_status(template_result)
+                bps_table_result = template_result
+
+        # Cadangan 1: extract JSON embedded (heuristik lama).
         bps_result = _try_bps_embedded_json(
             payload, instruction, int(tahun)
         )
         if bps_result is not None:
             return _normalize_status(bps_result)
 
-        # Fallback 2: coba __NEXT_DATA__ (Next.js SPA).
+        # Cadangan 2: coba __NEXT_DATA__ (Next.js SPA).
         bps_next = _try_bps_next_data(
             payload, instruction, int(tahun)
         )
         if bps_next is not None:
             return _normalize_status(bps_next)
 
-        # Fallback 3: template adapter (generic untuk semua tabel BPS).
-        lower_url = str(url or "").lower()
-        if "/statistics-table/" in lower_url:
-            from sources.bps_table_adapter import try_bps_table
-            template_result = try_bps_table(
-                url=url,
-                tahun=tahun,
-                description=description,
-                wilayah=wilayah,
+        if (
+            bps_table_result is not None
+            and bps_table_result.status == "NEED_PARSER"
+            and not is_bps_table_listing
+            and payload.kind in {"html", "spa"}
+        ):
+            browser_result = extract_browser(
+                url,
+                instruction,
+                int(tahun),
+                decimal=",",
+                thousands=".",
+                select_year=int(tahun),
             )
-            if template_result is not None:
-                return _normalize_status(template_result)
+            if browser_result.status == "SUCCESS":
+                return _normalize_status(browser_result)
+            if browser_result.message:
+                bps_table_result.message = (
+                    f"{bps_table_result.message} | Browser fallback: "
+                    f"{browser_result.message}"
+                )
+            bps_table_result.evidence.extend(browser_result.evidence)
 
-        # Fallback 4: template PDF (generic untuk press release BPS).
-        if "/pressrelease/" in lower_url:
+        if bps_table_result is not None and not is_bps_table_listing:
+            return _normalize_status(bps_table_result)
+
+        # Coba konektor PDF pada semua halaman BPS, bukan berdasarkan
+        # pola path tertentu seperti /pressrelease/.
+        if payload.kind in {"html", "spa"}:
             from sources.bps_pdf_adapter import try_bps_pdf
-            template_result = try_bps_pdf(
+            bps_pdf_result = try_bps_pdf(
                 url=url,
                 tahun=tahun,
                 description=description,
                 wilayah=wilayah,
+                nama_indikator=nama_indikator,
+                page_html=payload.content.decode("utf-8", "ignore"),
+                page_kind=payload.kind,
             )
-            if template_result is not None:
-                return _normalize_status(template_result)
+            if (
+                bps_pdf_result is not None
+                and bps_pdf_result.status in {"SUCCESS", "REVIEW"}
+            ):
+                return _normalize_status(bps_pdf_result)
+            if (
+                bps_pdf_result is not None
+                and any(
+                    evidence.startswith("pdf_candidates=")
+                    for evidence in bps_pdf_result.evidence
+                )
+                and (
+                    "pdf_candidates=0" not in bps_pdf_result.evidence
+                    or _is_bps_pdf_listing(url)
+                )
+            ):
+                return _normalize_status(bps_pdf_result)
 
         # Fallback 5: render SPA dengan Selenium untuk BPS pages.
         if payload.kind == "spa":
-            browser_result = extract_browser(url, instruction, int(tahun))
+            browser_result = extract_browser(
+                fetch_url, instruction, int(tahun)
+            )
             if browser_result.status == "SUCCESS":
                 return _normalize_status(browser_result)
 
@@ -426,21 +539,87 @@ def scrape_source_auto(
     if generic.status == "NEED_PARSER" and payload.kind in {"html", "spa"}:
         from sources.generic_auto_extractor import try_generic_auto
         auto_result = try_generic_auto(
-            url=url,
+            url=fetch_url,
             tahun=tahun,
             description=description,
             wilayah=wilayah,
         )
         if auto_result is not None:
-            return _normalize_status(auto_result)
+            auto_result = _normalize_status(auto_result)
+            if auto_result.status != "NEED_PARSER":
+                return auto_result
+            if auto_result.message:
+                generic.message = (
+                    f"{generic.message} | Generic auto: "
+                    f"{auto_result.message}"
+                )
+            generic.evidence.extend(auto_result.evidence)
 
-    if (
-        generic.status == "NEED_PARSER"
-        and legacy is not None
-        and legacy.status == "LEGACY_FAILED"
-    ):
-        generic.message = (
-            f"{generic.message} | Legacy juga gagal: {legacy.message}"
+    if generic.status == "NEED_PARSER":
+        if (
+            bps_table_result is not None
+            and bps_table_result.status == "NEED_PARSER"
+        ):
+            if bps_table_result.message:
+                generic.message = (
+                    f"{generic.message} | BPS TABLE: "
+                    f"{bps_table_result.message}"
+                )
+            generic.evidence.extend(bps_table_result.evidence)
+            generic.source_type = bps_table_result.source_type
+
+        if (
+            bps_pdf_result is not None
+            and bps_pdf_result.status == "NEED_PARSER"
+        ):
+            if bps_pdf_result.message:
+                generic.message = (
+                    f"{generic.message} | BPS PDF: "
+                    f"{bps_pdf_result.message}"
+                )
+            generic.evidence.extend(bps_pdf_result.evidence)
+            if bps_table_result is None:
+                generic.source_type = "bps_pdf"
+
+    if generic.status == "NEED_PARSER":
+        legacy = brin_result or try_legacy_source(
+            url=url,
+            tahun=tahun,
+            description=description,
+            wilayah=wilayah,
+            kode=kode,
+            nama_indikator=nama_indikator,
+            sumber_2=sumber_2,
+            sumber_3=sumber_3,
         )
+        if legacy is not None and legacy.status in {
+            "SUCCESS",
+            "UNAVAILABLE",
+            "LINK_TIDAK_LENGKAP",
+            "DATA_TIDAK_ADA",
+            "SUMBER_PERLU_LOGIN",
+            "SUMBER_TERBLOKIR",
+        }:
+            return legacy
+        if legacy is not None and legacy.status == "LEGACY_FAILED":
+            generic.message = (
+                f"{generic.message} | Legacy juga gagal: {legacy.message}"
+            )
 
     return generic
+
+
+def _is_bps_pdf_listing(url):
+    path = urlparse(str(url or "")).path.lower()
+    return any(
+        marker in path
+        for marker in (
+            "/pressrelease",
+            "/publication",
+            "/publikasi",
+            "/news",
+            "/berita",
+            "/subject",
+            "/artikel",
+        )
+    ) and not path.endswith((".html", ".htm"))

@@ -232,6 +232,7 @@ def _resolve_pdf(driver, url, document):
 
 def _download_once(driver, url, tag):
     target_netloc = urlsplit(url).netloc.lower()
+    response_statuses = set()
 
     _drain_performance(driver)
 
@@ -240,7 +241,7 @@ def _download_once(driver, url, tag):
     except TimeoutException:
         pass
     except Exception:
-        return None
+        return None, response_statuses
 
     deadline = time.time() + BROWSER_POLL_SECONDS
     reloaded = False
@@ -253,10 +254,11 @@ def _download_once(driver, url, tag):
             if doc_netloc != target_netloc:
                 continue
 
+            response_statuses.add(document["status"])
             data = _resolve_pdf(driver, url, document)
 
             if data:
-                return data
+                return data, response_statuses
 
             if document["status"] in {401, 403, 429}:
                 saw_blocked = True
@@ -275,7 +277,7 @@ def _download_once(driver, url, tag):
 
         time.sleep(0.8)
 
-    return None
+    return None, response_statuses
 
 
 def download_pdf_via_browser(
@@ -291,9 +293,11 @@ def download_pdf_via_browser(
         try:
             driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
             _hide_automation(driver)
+            response_statuses = set()
 
             for attempt in range(1, attempts + 1):
-                data = _download_once(driver, url, tag)
+                data, attempt_statuses = _download_once(driver, url, tag)
+                response_statuses.update(attempt_statuses)
 
                 if data:
                     print(
@@ -301,6 +305,12 @@ def download_pdf_via_browser(
                         f"({len(data)} byte)."
                     )
                     return bytes(data)
+
+                if 401 in response_statuses:
+                    raise RuntimeError(
+                        "SOURCE_NEED_LOGIN: "
+                        f"HTTP 401 while downloading {url}."
+                    )
 
                 if attempt < attempts:
                     wait = BROWSER_RETRY_BACKOFF * attempt
@@ -310,11 +320,17 @@ def download_pdf_via_browser(
                     )
                     time.sleep(wait)
 
+            if response_statuses.intersection({403, 429}):
+                raise RuntimeError(
+                    "SOURCE_BLOCKED: "
+                    f"HTTP {max(response_statuses.intersection({403, 429}))} "
+                    f"while downloading {url}."
+                )
+
             raise RuntimeError(
-                "SOURCE_BLOCKED: "
-                f"Chrome tidak bisa mengunduh {url} "
-                f"setelah {attempts} percobaan "
-                "(terblokir proteksi Cloudflare)."
+                "SOURCE_DOWNLOAD_FAILED: "
+                f"Chrome gagal mengunduh {url} setelah {attempts} "
+                "percobaan; tidak ada respons HTTP 403/429 yang teramati."
             )
 
         finally:

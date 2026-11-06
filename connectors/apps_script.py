@@ -27,6 +27,14 @@ class AppsScriptError(Exception):
     """
 
 
+def _is_lock_timeout(error: AppsScriptError) -> bool:
+    message = str(error).lower()
+    return (
+        "batas waktu penguncian habis" in message
+        or "lock timeout" in message
+    )
+
+
 def _require_config():
     if not APPS_SCRIPT_URL:
         raise RuntimeError("APPS_SCRIPT_URL belum diisi di .env")
@@ -166,7 +174,11 @@ def _request_json_unsafe(
             requests.exceptions.ConnectionError,
             requests.exceptions.HTTPError,
             RuntimeError,
+            AppsScriptError,
         ) as error:
+            if isinstance(error, AppsScriptError) and not _is_lock_timeout(error):
+                raise
+
             last_error = error
 
             if attempt >= MAX_RETRIES:

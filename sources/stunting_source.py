@@ -268,6 +268,7 @@ def get_pdf_bytes(source_url):
 
     result = {}
     index = 0
+    seen_pdf_urls = set()
 
     for candidate in _split_source_urls(source_url):
         index += 1
@@ -290,6 +291,14 @@ def get_pdf_bytes(source_url):
             continue
 
         for pdf_url in pdf_urls:
+            if pdf_url in seen_pdf_urls:
+                print(
+                    "    [STUNTING] URL PDF duplikat "
+                    "dilewati sebelum unduhan."
+                )
+                continue
+            seen_pdf_urls.add(pdf_url)
+
             try:
                 content = _download_pdf(pdf_url)
             except Exception as error:

@@ -63,16 +63,16 @@ def _value_for_region(value, region):
     return None
 
 
-def _round2(value):
+def _round3(value):
     """
-    Bulatkan nilai numerik ke 2 angka di belakang koma saat ditulis ke
+    Bulatkan nilai numerik ke 3 angka di belakang koma saat ditulis ke
     hasil akhir. Nilai None/non-angka diteruskan apa adanya.
     """
     if value is None or isinstance(value, bool):
         return value
 
     try:
-        return round(float(value), 2)
+        return round(float(value), 3)
     except (TypeError, ValueError):
         return value
 
@@ -93,25 +93,6 @@ def _regions(default_region, *values):
                 output.append(region)
 
     return output or [default_region]
-
-
-_MULTI_SOURCE_KODES = {"3.a"}
-
-
-def _is_multi_source_adapter(job, index):
-    """
-    Adapter tertentu (mis. TBC) memproses Sumber_1..3 dalam satu panggilan
-    (Sumber_2 = pelengkap nilai provinsi). Slot sumber setelah slot 1
-    tidak boleh dipanggil lagi sebagai sumber berdiri sendiri.
-    """
-    kode_norm = str(
-        getattr(job, "kode", "") or ""
-    ).strip().lower()
-
-    return (
-        kode_norm in _MULTI_SOURCE_KODES
-        and index > 0
-    )
 
 
 def _sources_in_formula(rumus):
@@ -164,9 +145,8 @@ def _complete_existing_years(job, years, source_specs, wilayah, records):
     skipped_years : tahun yang SELURUH wilayahnya sudah SUCCESS (tidak
                     perlu di-scrape sama sekali).
     existing_pairs: set (tahun, region) yang sudah SUCCESS — dipakai
-                    untuk skip per-wilayah di tahun yang masih
-                    sebagian (partial) sehingga hanya wilayah yang
-                    belum ada yang diambil ulang.
+                    untuk mempertahankan data tersebut hanya jika
+                    scraping ulang gagal atau perlu ditinjau.
     """
     if not records:
         return set(), set()
@@ -274,6 +254,18 @@ def _build_failure_summary(diagnostics, used_sources, regions):
         reason = _FRIENDLY_REASONS.get(status, "gagal mengambil data")
         label = f"sumber {source}: {reason}" if source else reason
 
+        source_type = str(item.get("type") or "")
+        if status == "NEED_PARSER" and (
+            item.get("error")
+            or source_type.startswith(("bps_pdf", "bps_table"))
+        ):
+            detail = str(item.get("message") or "").strip()
+            if detail:
+                label += f" ({detail[:400]})"
+            evidence = item.get("evidence") or []
+            if evidence and source_type.startswith(("bps_pdf", "bps_table")):
+                label += f" [{'; '.join(map(str, evidence[:8]))}]"
+
         # Untuk sumber terblokir, sertakan potongan error asli
         # (mis. "403 Client Error: Forbidden") agar penyebab jelas.
         if status == "SUMBER_TERBLOKIR":
@@ -349,12 +341,6 @@ def process_indicator_job(
             if not url:
                 continue
 
-            # Adapter yang mengambil semua sumber sekaligus (mis. TBC:
-            # Sumber_2 pelengkap provinsi) sudah dipanggil di slot 1;
-            # slot lain tidak perlu diproses ulang per-sumber.
-            if index > 0 and _is_multi_source_adapter(job, index):
-                continue
-
             tasks.append((tahun, index, url, description))
 
     total_tasks = max(1, len(tasks))
@@ -421,7 +407,6 @@ def process_indicator_job(
                         tahun=tahun,
                         description=source_context,
                         wilayah=wilayah,
-                        kode=job.kode,
                         nama_indikator=job.nama_indikator,
                         sumber_2=job.sumber_2,
                         sumber_3=job.sumber_3,
@@ -429,7 +414,20 @@ def process_indicator_job(
 
                 last_error = None
 
-                if not _is_retryable_status(extracted.status):
+                completed_pdf_parse = (
+                    extracted.source_type == "bps_pdf"
+                    and any(
+                        evidence.startswith((
+                            "pdf_candidates=",
+                            "pdf_discovery=",
+                        ))
+                        for evidence in extracted.evidence
+                    )
+                )
+                if (
+                    completed_pdf_parse
+                    or not _is_retryable_status(extracted.status)
+                ):
                     break
 
             except Exception as error:
@@ -488,6 +486,7 @@ def process_indicator_job(
                     "source": index + 1,
                     "status": "NEED_PARSER",
                     "message": str(error).splitlines()[0][:300],
+                    "error": True,
                 })
 
                 if index + 1 in used_sources:
@@ -558,9 +557,9 @@ def process_indicator_job(
                         )
                 break
 
-    # (tahun, wilayah) yang sudah SUCCESS — tidak boleh ditulis ulang.
-    # Dipakai untuk tahun partial: hanya wilayah yang belum ada yang
-    # menghasilkan baris hasil baru.
+    # Nilai SUCCESS lama tidak ditimpa jika scraping ulang gagal. Jika
+    # scraping berhasil, semua wilayah dihasilkan kembali supaya nilai lama
+    # yang keliru dapat diperbarui.
     skipped_pairs_by_year = {}
 
     def _skip_existing(tahun, region):
@@ -634,9 +633,6 @@ def process_indicator_job(
         )
 
         for region in region_targets:
-            if _skip_existing(tahun, region):
-                continue
-
             r1 = _value_for_region(
                 s1,
                 region,
@@ -674,24 +670,24 @@ def process_indicator_job(
                 "nama_indikator": job.nama_indikator,
                 "wilayah": region,
                 "tahun": tahun,
-                "nilai_s1": _round2(r1),
-                "nilai_s2": _round2(r2),
-                "nilai_s3": _round2(r3),
-                "hasil": _round2(hasil),
+                "nilai_s1": _round3(r1),
+                "nilai_s2": _round3(r2),
+                "nilai_s3": _round3(r3),
+                "hasil": _round3(hasil),
                 "status": "SUCCESS",
                 "error": "",
             })
 
-    # Diagnostic per tahun yang di-scrape sebagian: wilayah yang sudah
-    # SUCCESS dilewati, hanya yang belum ada yang diambil ulang.
+    # Diagnostic per tahun ketika nilai SUCCESS lama dipertahankan karena
+    # scraping ulang gagal atau perlu ditinjau.
     for tahun in sorted(skipped_pairs_by_year):
         regions = skipped_pairs_by_year[tahun]
         diagnostics.append({
             "tahun": tahun,
             "status": "SKIPPED_EXISTING",
             "message": (
-                f"{len(regions)} wilayah sudah SUCCESS; "
-                "hanya wilayah yang belum ada data yang diambil ulang."
+                f"{len(regions)} wilayah lama tetap dipertahankan karena "
+                "hasil scraping ulang tidak berhasil."
             ),
             "wilayah": regions,
         })

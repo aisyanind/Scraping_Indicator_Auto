@@ -2,9 +2,11 @@ from io import StringIO
 import base64
 import json
 import time
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 from engine.tabular import extract_from_dataframes
@@ -25,7 +27,7 @@ def _chrome_options():
     return options
 
 
-def render_page(url, wait_seconds=5):
+def render_page(url, wait_seconds=5, select_year=None):
     """
     Render halaman dengan Chrome headless, return HTML hasil render.
     Dipakai untuk halaman SPA/dashboard yang butuh JS.
@@ -42,6 +44,77 @@ def render_page(url, wait_seconds=5):
             == "complete"
         )
         time.sleep(wait_seconds)
+
+        if select_year is not None:
+            parts = urlsplit(url)
+            query = urlencode(
+                [
+                    (key, value)
+                    for key, value in parse_qsl(
+                        parts.query,
+                        keep_blank_values=True,
+                    )
+                    if key.lower() != "year"
+                ]
+            )
+            clean_url = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    parts.path,
+                    query,
+                    parts.fragment,
+                )
+            )
+            if clean_url != driver.current_url:
+                driver.get(clean_url)
+                WebDriverWait(driver, 45).until(
+                    lambda d: d.execute_script(
+                        "return document.readyState"
+                    ) == "complete"
+                )
+
+            for button in driver.find_elements(By.TAG_NAME, "button"):
+                if (
+                    button.is_displayed()
+                    and button.text.strip() in {"Tutup", "Close"}
+                ):
+                    button.click()
+                    break
+
+            table_text = driver.execute_script(
+                "return document.querySelector('table')?.innerText || ''"
+            )
+            year_button = WebDriverWait(driver, 30).until(
+                lambda d: next(
+                    (
+                        button
+                        for button in d.find_elements(
+                            By.TAG_NAME,
+                            "button",
+                        )
+                        if button.is_displayed()
+                        and button.text.strip() == str(select_year)
+                    ),
+                    None,
+                )
+            )
+            if "bg-main-light" not in (
+                year_button.get_attribute("class") or ""
+            ):
+                year_button.click()
+                WebDriverWait(driver, 30).until(
+                    lambda d: (
+                        str(select_year)
+                        in d.execute_script(
+                            "return document.querySelector('table')?.innerText || ''"
+                        )
+                        and d.execute_script(
+                            "return document.querySelector('table')?.innerText || ''"
+                        ) != table_text
+                    )
+                )
+            time.sleep(wait_seconds)
 
         return driver.page_source or ""
     finally:
@@ -128,11 +201,26 @@ def render_page_capture_network(url, wait_seconds=5):
         driver.quit()
 
 
-def extract_browser(url, instruction, tahun):
-    html = render_page(url)
+def extract_browser(
+    url,
+    instruction,
+    tahun,
+    decimal=None,
+    thousands=None,
+    select_year=None,
+):
+    html = render_page(url, select_year=select_year)
 
     try:
-        frames = pd.read_html(StringIO(html))
+        read_html_options = {}
+        if decimal is not None:
+            read_html_options["decimal"] = decimal
+        if thousands is not None:
+            read_html_options["thousands"] = thousands
+        frames = pd.read_html(
+            StringIO(html),
+            **read_html_options,
+        )
     except Exception:
         frames = []
 

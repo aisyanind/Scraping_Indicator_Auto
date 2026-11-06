@@ -101,6 +101,7 @@ def find_latest_ibei_pdf_url(session=None):
     print("    [IBEI] Mencari link PDF IBEI dari Bappenas...")
 
     requester = session if session is not None else requests
+    request_error = None
 
     try:
         response = requester.get(
@@ -111,6 +112,7 @@ def find_latest_ibei_pdf_url(session=None):
         response.raise_for_status()
         html = response.text
     except Exception as error:
+        request_error = error
         print(
             "    [IBEI] Halaman pencarian gagal diambil "
             f"({type(error).__name__}); coba via Chrome..."
@@ -135,9 +137,27 @@ def find_latest_ibei_pdf_url(session=None):
             candidates.append(absolute_url)
 
     if not candidates:
+        status_code = getattr(
+            getattr(request_error, "response", None),
+            "status_code",
+            None,
+        )
+        if status_code in {403, 429}:
+            raise RuntimeError(
+                "SOURCE_BLOCKED: "
+                f"Halaman pencarian publikasi Bappenas menolak akses "
+                f"(HTTP {status_code})."
+            ) from request_error
+        if status_code == 401:
+            raise RuntimeError(
+                "SOURCE_NEED_LOGIN: "
+                "Halaman pencarian publikasi Bappenas meminta autentikasi "
+                "(HTTP 401)."
+            ) from request_error
+
         raise RuntimeError(
             "Link PDF IBEI tidak ditemukan di halaman publikasi Bappenas."
-        )
+        ) from request_error
 
     return candidates[0]
 
@@ -229,7 +249,7 @@ def get_ibei_pdf_bytes(source_url=""):
             errors.append(error)
             print(f"    [IBEI] Gagal dari URL ini: {error}")
 
-    # 3b. Requests diblokir Cloudflare -> unduh via Chrome.
+    # 3b. Coba browser bila unduhan requests gagal.
     for pdf_url in urls_to_try:
         try:
             content = download_pdf_via_browser(pdf_url, tag="IBEI")
@@ -288,8 +308,8 @@ def _build_final_pdf_error(errors):
 
     if blocked:
         header = (
-            "SOURCE_BLOCKED: PDF IBEI terblokir proteksi "
-            "Cloudflare (403) di semua sumber."
+            "SOURCE_BLOCKED: Akses otomatis ke sumber IBEI ditolak "
+            "(HTTP 403/429)."
         )
     else:
         header = (

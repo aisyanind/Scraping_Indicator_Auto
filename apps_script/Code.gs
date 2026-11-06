@@ -363,9 +363,11 @@ function submitIndicator(form) {
 
     SpreadsheetApp.flush();
 
-    // Master bertambah — katalog indikator perlu dibaca ulang.
+    // Master bertambah — katalog indikator & link perlu dibaca ulang.
     try {
-      CacheService.getScriptCache().remove(CATALOG_CACHE_KEY);
+      const scriptCache = CacheService.getScriptCache();
+      scriptCache.remove(CATALOG_CACHE_KEY);
+      scriptCache.remove(LINK_CATALOG_CACHE_KEY);
     } catch (e) {
       // cache best-effort
     }
@@ -641,16 +643,22 @@ function updateJob_(jobId, status, progress, error, diagnostics) {
       JOB_HEADERS
     );
 
-    const values = sheet.getDataRange().getValues();
+    const lastRow = sheet.getLastRow();
+    const match = lastRow < 2
+      ? null
+      : sheet
+        .getRange(2, 1, lastRow - 1, 1)
+        .createTextFinder(String(jobId))
+        .matchEntireCell(true)
+        .findNext();
     const now = new Date();
 
-    for (let i = 1; i < values.length; i++) {
-      if (String(values[i][0]) !== String(jobId)) {
-        continue;
-      }
-
-      const row = i + 1;
-      const currentStatus = String(values[i][3] || '').toUpperCase();
+    if (match) {
+      const row = match.getRow();
+      const values = sheet
+        .getRange(row, 1, 1, JOB_HEADERS.length)
+        .getValues()[0];
+      const currentStatus = String(values[3] || '').toUpperCase();
       const incomingStatus = String(status || '').toUpperCase();
 
       // Jangan biarkan proses lain menimpa permintaan cancel.
@@ -665,41 +673,40 @@ function updateJob_(jobId, status, progress, error, diagnostics) {
         };
       }
 
-      sheet.getRange(row, 4).setValue(status || '');
-      sheet.getRange(row, 5).setValue(
-        progress == null ? '' : progress
-      );
-
-      if (
+      const startedAt = (
         String(status).toUpperCase() === 'PROCESSING'
-        && !values[i][6]
-      ) {
-        sheet.getRange(row, 7).setValue(now);
+        && !values[6]
+      ) ? now : values[6];
+
+      const isTerminalStatus = [
+        'SUCCESS',
+        'PARTIAL',
+        'REVIEW',
+        'NEED_PARSER',
+        'SUMBER_TERBLOKIR',
+        'FAILED',
+        'CANCELLED'
+      ].includes(String(status).toUpperCase());
+      const finishedAt = isTerminalStatus ? now : values[7];
+
+      if (isTerminalStatus) {
+        // Job selesai — statistik berhasil/gagal per link berubah.
+        try {
+          CacheService.getScriptCache().remove(LINK_CATALOG_CACHE_KEY);
+        } catch (e) {
+          // cache best-effort
+        }
       }
 
-      if (
-        [
-          'SUCCESS',
-          'PARTIAL',
-          'REVIEW',
-          'NEED_PARSER',
-          'SUMBER_TERBLOKIR',
-          'FAILED',
-          'CANCELLED'
-        ].includes(String(status).toUpperCase())
-      ) {
-        sheet.getRange(row, 8).setValue(now);
-      }
-
-      sheet.getRange(row, 9).setValue(error || '');
-
-      if (diagnostics) {
-        sheet.getRange(row, 10).setValue(
-          JSON.stringify(diagnostics)
-        );
-      }
-
-      SpreadsheetApp.flush();
+      sheet.getRange(row, 4, 1, 7).setValues([[
+        status || '',
+        progress == null ? '' : progress,
+        values[5],
+        startedAt,
+        finishedAt,
+        error || '',
+        diagnostics ? JSON.stringify(diagnostics) : values[9]
+      ]]);
 
       return {success: true};
     }
@@ -745,9 +752,22 @@ function getSuccessfulResultsByKode_(kode) {
 
 
 function saveResults_(results) {
+  const successfulResults = results.filter(
+    item => String(item.status).toUpperCase() === 'SUCCESS'
+  );
+
+  if (!successfulResults.length) {
+    return {
+      success: true,
+      total: results.length,
+      inserted: 0,
+      updated: 0
+    };
+  }
+
   const lock = LockService.getScriptLock();
 
-  // Mencegah dua proses menulis/upsert/sort hasil pada saat yang sama.
+  // Lindungi upsert agar job paralel tidak menimpa atau menduplikasi baris.
   lock.waitLock(30000);
 
   try {
@@ -759,35 +779,28 @@ function saveResults_(results) {
       RESULT_HEADERS
     );
 
-    // Cegah kode seperti 3.2 diubah menjadi tanggal.
-    sheet.getRange('A:A').setNumberFormat('@');
-
     const values = sheet.getDataRange().getValues();
-    const keyToRow = {};
+    const rows = values.slice(1);
+    const keyToIndex = Object.create(null);
 
-    for (let i = 1; i < values.length; i++) {
-      const kode = String(values[i][0] || '').trim();
-      const wilayah = normalizeRegion_(values[i][2]);
-      const tahun = String(values[i][3] || '').trim();
+    for (let i = 0; i < rows.length; i++) {
+      const kode = String(rows[i][0] || '').trim();
+      const wilayah = normalizeRegion_(rows[i][2]);
+      const tahun = String(rows[i][3] || '').trim();
 
       if (!kode || !tahun) {
         continue;
       }
 
-      keyToRow[
-        `${kode}|||${wilayah}|||${tahun}`
-      ] = i + 1;
+      keyToIndex[`${kode}|||${wilayah}|||${tahun}`] = i;
     }
 
     let inserted = 0;
     let updated = 0;
+    const affectedKeys = Object.create(null);
     const now = new Date();
 
-    results.forEach(item => {
-      if (String(item.status).toUpperCase() !== 'SUCCESS') {
-        return;
-      }
-
+    successfulResults.forEach(item => {
       const kode = String(item.kode || '').trim();
       const wilayah = String(item.wilayah || '').trim();
       const tahun = String(item.tahun || '').trim();
@@ -795,6 +808,7 @@ function saveResults_(results) {
       const key = (
         `${kode}|||${normalizeRegion_(wilayah)}|||${tahun}`
       );
+      affectedKeys[key] = true;
 
       const rowData = [
         kode,
@@ -810,39 +824,50 @@ function saveResults_(results) {
         item.error || ''
       ];
 
-      if (keyToRow[key]) {
-        sheet
-          .getRange(
-            keyToRow[key],
-            1,
-            1,
-            RESULT_HEADERS.length
-          )
-          .setValues([rowData]);
-
+      if (Object.prototype.hasOwnProperty.call(keyToIndex, key)) {
+        rows[keyToIndex[key]] = rowData;
         updated++;
-
       } else {
-        const newRowIndex = sheet.getLastRow() + 1;
-
-        sheet
-          .getRange(newRowIndex, 1, 1, RESULT_HEADERS.length)
-          .setValues([rowData]);
-
-        writeKodeAsText_(sheet, newRowIndex, 1, kode);
-
-        // flush agar getLastRow() benar-benar menunjuk row baru
-        SpreadsheetApp.flush();
-
-        keyToRow[key] = newRowIndex;
+        keyToIndex[key] = rows.length;
+        rows.push(rowData);
         inserted++;
       }
     });
 
-    // Sorting dilakukan masih di dalam lock.
-    sortResults_();
+    sortResultRows_(rows);
 
-    SpreadsheetApp.flush();
+    // Satu write batch menggantikan write/flush berulang per baris.
+    sheet.getRange(2, 1, rows.length, 1).setNumberFormat('@');
+    sheet.getRange(2, 1, rows.length, RESULT_HEADERS.length).setValues(rows);
+    sheet.getRange(2, 5, rows.length, 4).setNumberFormat('0.000');
+
+    const writtenCodes = sheet
+      .getRange(2, 1, rows.length, 1)
+      .getValues();
+    let correctedCode = false;
+
+    for (let i = 0; i < rows.length; i++) {
+      const expectedCode = String(rows[i][0] || '').trim();
+      const rowKey = (
+        `${expectedCode}|||${normalizeRegion_(rows[i][2])}|||`
+        + `${String(rows[i][3] || '').trim()}`
+      );
+      const writtenCode = writtenCodes[i][0];
+
+      if (
+        affectedKeys[rowKey]
+        && expectedCode
+        && (
+          String(writtenCode).trim() !== expectedCode
+          || Object.prototype.toString.call(writtenCode) === '[object Date]'
+        )
+      ) {
+        sheet.getRange(i + 2, 1).setValue(`'${expectedCode}`);
+        correctedCode = true;
+      }
+    }
+
+    if (correctedCode) SpreadsheetApp.flush();
 
     return {
       success: true,
@@ -854,6 +879,45 @@ function saveResults_(results) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+function sortResultRows_(rows) {
+  const orderMap = {};
+  WILAYAH_ORDER.forEach((name, index) => {
+    orderMap[normalizeRegion_(name)] = index;
+  });
+
+  rows.sort((a, b) => {
+    const kodeA = String(a[0] || '').trim();
+    const kodeB = String(b[0] || '').trim();
+    const kodeCompare = kodeA.localeCompare(
+      kodeB,
+      'id',
+      {numeric: true, sensitivity: 'base'}
+    );
+
+    if (kodeCompare !== 0) return kodeCompare;
+
+    const wilayahA = normalizeRegion_(a[2]);
+    const wilayahB = normalizeRegion_(b[2]);
+    const orderA = Object.prototype.hasOwnProperty.call(orderMap, wilayahA)
+      ? orderMap[wilayahA] : 9999;
+    const orderB = Object.prototype.hasOwnProperty.call(orderMap, wilayahB)
+      ? orderMap[wilayahB] : 9999;
+
+    if (orderA !== orderB) return orderA - orderB;
+    if (orderA === 9999) {
+      const regionCompare = wilayahA.localeCompare(
+        wilayahB,
+        'id',
+        {sensitivity: 'base'}
+      );
+      if (regionCompare !== 0) return regionCompare;
+    }
+
+    return (Number(a[3]) || 0) - (Number(b[3]) || 0);
+  });
 }
 
 
@@ -881,59 +945,7 @@ function sortResults_() {
 
   const rows = range.getValues();
 
-  const orderMap = {};
-  WILAYAH_ORDER.forEach((name, index) => {
-    orderMap[normalizeRegion_(name)] = index;
-  });
-
-  rows.sort((a, b) => {
-    const kodeA = String(a[0] || '').trim();
-    const kodeB = String(b[0] || '').trim();
-
-    const kodeCompare = kodeA.localeCompare(
-      kodeB,
-      'id',
-      {numeric: true, sensitivity: 'base'}
-    );
-
-    if (kodeCompare !== 0) {
-      return kodeCompare;
-    }
-
-    const wilayahA = normalizeRegion_(a[2]);
-    const wilayahB = normalizeRegion_(b[2]);
-
-    const orderA = Object.prototype.hasOwnProperty.call(
-      orderMap,
-      wilayahA
-    ) ? orderMap[wilayahA] : 9999;
-
-    const orderB = Object.prototype.hasOwnProperty.call(
-      orderMap,
-      wilayahB
-    ) ? orderMap[wilayahB] : 9999;
-
-    if (orderA !== orderB) {
-      return orderA - orderB;
-    }
-
-    if (orderA === 9999) {
-      const regionCompare = wilayahA.localeCompare(
-        wilayahB,
-        'id',
-        {sensitivity: 'base'}
-      );
-
-      if (regionCompare !== 0) {
-        return regionCompare;
-      }
-    }
-
-    const tahunA = Number(a[3]) || 0;
-    const tahunB = Number(b[3]) || 0;
-
-    return tahunA - tahunB;
-  });
+  sortResultRows_(rows);
 
   range.setValues(rows);
 }
@@ -1061,6 +1073,11 @@ function repairResultSheetFormat() {
 
   master.getRange('A:A').setNumberFormat('@');
   result.getRange('A:A').setNumberFormat('@');
+  if (result.getLastRow() > 1) {
+    result
+      .getRange(2, 5, result.getLastRow() - 1, 4)
+      .setNumberFormat('0.000');
+  }
   jobs.getRange('C:C').setNumberFormat('@');
 
   sortResults_();
@@ -1171,6 +1188,11 @@ function getDashboardData(filterKode) {
 
 const CATALOG_CACHE_KEY = 'indicator_catalog_v1';
 const CATALOG_CACHE_SECONDS = 300;
+
+const LINK_CATALOG_CACHE_KEY = 'link_catalog_v1';
+const LINK_CATALOG_CACHE_SECONDS = 300;
+const LINK_CATALOG_MAX_LINKS = 200;
+const LINK_STATS_MAX_JOB_ROWS = 500;
 
 function isIndicatorCode_(value) {
   if (value === null || value === undefined) return false;
@@ -1324,6 +1346,179 @@ function getSourceCatalog(kode) {
   const sources = Object.keys(byUrl).map(k => byUrl[k]);
 
   return {success: true, kode: target, sources: sources};
+}
+
+
+/**
+ * Agregasi hasil scraping per (Master_Row, slot sumber) dari sheet Jobs.
+ * Dipakai getLinkCatalog untuk menampilkan "berhasil N×" / "gagal".
+ */
+function readJobLinkStats_() {
+  const stats = {};
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ensureSheet_(ss, CONFIG.JOB_SHEET, JOB_HEADERS);
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow < 2) return stats;
+
+    const startRow = Math.max(2, lastRow - LINK_STATS_MAX_JOB_ROWS + 1);
+    const values = sheet
+      .getRange(startRow, 1, lastRow - startRow + 1, JOB_HEADERS.length)
+      .getValues();
+
+    const okStatuses = ['SUCCESS', 'REVIEW'];
+    const failStatuses = [
+      'NEED_PARSER',
+      'DATA_TIDAK_ADA',
+      'LINK_TIDAK_LENGKAP',
+      'SUMBER_PERLU_LOGIN',
+      'SUMBER_TERBLOKIR',
+      'LEGACY_FAILED',
+      'FAILED_FORMULA',
+      'FAILED'
+    ];
+
+    for (let i = 0; i < values.length; i++) {
+      const masterRow = parseInt(values[i][1], 10);
+
+      if (!masterRow) continue;
+
+      let diagnostics = [];
+
+      try {
+        diagnostics = JSON.parse(String(values[i][9] || '[]'));
+      } catch (e) {
+        continue;
+      }
+
+      if (!Array.isArray(diagnostics) || !diagnostics.length) continue;
+
+      if (!stats[masterRow]) stats[masterRow] = {};
+
+      for (let d = 0; d < diagnostics.length; d++) {
+        const item = diagnostics[d] || {};
+        const slot = parseInt(item.source, 10);
+
+        if (!(slot >= 1 && slot <= 3)) continue;
+
+        const itemStatus = String(item.status || '').toUpperCase();
+        if (!itemStatus) continue;
+
+        if (okStatuses.indexOf(itemStatus) >= 0) {
+          if (!stats[masterRow][slot]) {
+            stats[masterRow][slot] = {ok: 0, fail: 0};
+          }
+          stats[masterRow][slot].ok++;
+        } else if (failStatuses.indexOf(itemStatus) >= 0) {
+          if (!stats[masterRow][slot]) {
+            stats[masterRow][slot] = {ok: 0, fail: 0};
+          }
+          stats[masterRow][slot].fail++;
+        }
+      }
+    }
+  } catch (e) {
+    // Stats bersifat pelengkap; katalog tetap jalan tanpanya.
+  }
+
+  return stats;
+}
+
+
+/**
+ * Katalog link global dari Master (append-only = riwayat pemakaian).
+ * Tiap entri: url, desc, indicators[{kode,nama}], successCount, failCount.
+ * Cache; invalidasi saat submit & saat job selesai.
+ */
+function getLinkCatalog() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(LINK_CATALOG_CACHE_KEY);
+
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (parsed && parsed.success) return parsed;
+    } catch (e) {
+      // cache korup — bangun ulang
+    }
+  }
+
+  const rows = readMasterObjects_();
+  const stats = readJobLinkStats_();
+  const byUrl = {};
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    const rowKode = String(row.Kode || '').trim();
+    const rowNama = String(row.Nama_Indikator || '').trim();
+    const rowStats = stats[i + 2] || {};
+
+    for (let slot = 1; slot <= 3; slot++) {
+      const url = String(row['Sumber_' + slot] || '').trim();
+      if (!url) continue;
+
+      const key = normalizeSourceUrl_(url);
+      if (!key) continue;
+
+      let entry = byUrl[key];
+
+      if (!entry) {
+        entry = {
+          url: url,
+          desc: '',
+          indicators: [],
+          successCount: 0,
+          failCount: 0
+        };
+        entry._kodeSeen = {};
+        byUrl[key] = entry;
+      }
+
+      if (!entry.desc) {
+        const desc = stripScopeHint_(row['Data_Diambil_' + slot] || '');
+        if (desc) entry.desc = desc;
+      }
+
+      if (rowKode && !entry._kodeSeen[rowKode]) {
+        entry._kodeSeen[rowKode] = 1;
+        entry.indicators.push({kode: rowKode, nama: rowNama});
+      }
+
+      const slotStats = rowStats[slot];
+
+      if (slotStats) {
+        entry.successCount += slotStats.ok || 0;
+        entry.failCount += slotStats.fail || 0;
+      }
+    }
+  }
+
+  const links = Object.keys(byUrl).slice(0, LINK_CATALOG_MAX_LINKS)
+    .map(function(key) {
+      const entry = byUrl[key];
+      delete entry._kodeSeen;
+      return entry;
+    });
+
+  const payload = {
+    success: true,
+    links: links,
+    generatedAt: new Date().toISOString()
+  };
+
+  try {
+    cache.put(
+      LINK_CATALOG_CACHE_KEY,
+      JSON.stringify(payload),
+      LINK_CATALOG_CACHE_SECONDS
+    );
+  } catch (e) {
+    // payload terlalu besar untuk cache — tetap layani sekali jalan.
+  }
+
+  return payload;
 }
 
 

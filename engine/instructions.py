@@ -8,6 +8,7 @@ STOPWORDS = {
     "ambil", "data", "nilai", "tahun", "di", "dan", "dari", "untuk",
     "yang", "seluruh", "semua", "kalsel", "kalimantan", "selatan",
     "prov", "provinsi", "kab", "kabupaten", "kota",
+    "kode", "cakupan", "idsd", "sumber", "indikator",
 }
 
 

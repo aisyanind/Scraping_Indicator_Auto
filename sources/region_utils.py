@@ -33,6 +33,7 @@ REGION_ALIASES = {
     # Kalimantan Selatan
     "banjar baru": "banjarbaru",
     "banjarbaru": "banjarbaru",
+    "kota baru": "kotabaru",
     "tanah laut": "tanah laut",
     "kotabaru": "kotabaru",
     "barito kuala": "barito kuala",
@@ -138,6 +139,50 @@ def normalize_region(value):
             text = text.replace(alias, canonical)
 
     return text
+
+
+def _strip_region_prefix(value):
+    """
+    Buang prefix prov./kab./kota dari nama wilayah yang sudah dinormalisasi.
+
+    Dipakai untuk pencocokan label BPS (tanpa prefix, mis. "Kota Baru")
+    dengan nama kanonik sheet (dengan prefix, mis. "Kab. Kotabaru").
+    """
+    text = normalize_region(value)
+
+    for prefix in (
+        "prov. ", "prov ", "provinsi ",
+        "kab. ", "kab ", "kabupaten ",
+        "kota ",
+    ):
+        if text.startswith(prefix):
+            return text[len(prefix):]
+
+    return text
+
+
+def regions_match(label, target):
+    """
+    True jika dua label wilayah sama setelah normalisasi.
+
+    Cocok langsung (normalize_region sama) ATAU cocok setelah
+    prefix prov./kab./kota dibuang — supaya label tabel BPS seperti
+    "Tanah Laut" / "Kota Baru" match dengan "Kab. Tanah Laut" /
+    "Kab. Kotabaru" dari sheet.
+    """
+    left = normalize_region(label)
+    right = normalize_region(target)
+
+    if not left or not right:
+        return False
+
+    if left == right:
+        return True
+
+    bare_left = _strip_region_prefix(label)
+    bare_right = _strip_region_prefix(target)
+
+    return bool(bare_left) and bare_left == bare_right
 
 
 def resolve_targets(description, default_wilayah=None, available_regions=None):

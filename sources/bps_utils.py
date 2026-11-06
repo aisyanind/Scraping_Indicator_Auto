@@ -1,8 +1,12 @@
+import ipaddress
 import re
+import socket
 import urllib.parse
 import urllib.request
 
 import requests
+import urllib3
+from urllib3.util import Timeout
 
 from config import REQUEST_HEADERS
 
@@ -15,6 +19,152 @@ PAGE_REQUEST_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+PDF_REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+
+def _is_bps_hostname(hostname):
+    normalized = (hostname or "").lower().rstrip(".")
+    return normalized == "bps.go.id" or normalized.endswith(".bps.go.id")
+
+
+def _download_pdf_via_public_dns(url, timeout, referer=None):
+    current_url = url
+    for redirect_count in range(6):
+        parsed = urllib.parse.urlsplit(current_url)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme != "https"
+            or parsed.username
+            or parsed.password
+            or not _is_bps_hostname(hostname)
+        ):
+            raise RuntimeError(
+                "fallback DNS publik hanya menerima URL HTTPS BPS"
+            )
+
+        dns_response = requests.get(
+            "https://dns.google/resolve",
+            params={"name": hostname, "type": "A"},
+            headers={"Accept": "application/dns-json"},
+            timeout=min(timeout, 10),
+        )
+        dns_response.raise_for_status()
+        answer = dns_response.json()
+        addresses = []
+        for record in answer.get("Answer", []):
+            if record.get("type") != 1:
+                continue
+            address = ipaddress.ip_address(record.get("data", ""))
+            if address.is_global:
+                addresses.append(str(address))
+        if not addresses:
+            raise RuntimeError(
+                f"DNS publik tidak memberikan alamat IPv4 untuk {hostname}"
+            )
+
+        headers = {
+            **PDF_REQUEST_HEADERS,
+            "Host": parsed.netloc,
+        }
+        if referer:
+            headers["Referer"] = referer
+
+        request_path = parsed.path or "/"
+        if parsed.query:
+            request_path = f"{request_path}?{parsed.query}"
+
+        errors = []
+        redirected_url = None
+        for address in dict.fromkeys(addresses):
+            pool = urllib3.HTTPSConnectionPool(
+                address,
+                port=parsed.port or 443,
+                server_hostname=hostname,
+                assert_hostname=hostname,
+                cert_reqs="CERT_REQUIRED",
+                timeout=Timeout(
+                    connect=min(timeout, 15),
+                    read=timeout,
+                ),
+                retries=False,
+            )
+            try:
+                response = pool.urlopen(
+                    "GET",
+                    request_path,
+                    headers=headers,
+                    redirect=False,
+                )
+                if response.status in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise RuntimeError(
+                            f"HTTP {response.status} tanpa Location"
+                        )
+                    redirected_url = urllib.parse.urljoin(
+                        current_url,
+                        location,
+                    )
+                    redirected = urllib.parse.urlsplit(redirected_url)
+                    if (
+                        redirected.scheme != "https"
+                        or not _is_bps_hostname(redirected.hostname)
+                    ):
+                        raise RuntimeError(
+                            "redirect keluar dari domain HTTPS BPS ditolak"
+                        )
+                    break
+                if response.status != 200:
+                    body = response.data[:300].decode("utf-8", "replace")
+                    raise RuntimeError(
+                        f"HTTP {response.status}: {body}"
+                    )
+                if not response.data.startswith(b"%PDF"):
+                    raise RuntimeError(
+                        f"respons DNS publik bukan file PDF "
+                        f"(HTTP {response.status})"
+                    )
+                return response.data
+            except Exception as error:
+                errors.append(
+                    f"{address}: {error.__class__.__name__}: "
+                    f"{str(error).splitlines()[0][:120]}"
+                )
+            finally:
+                pool.close()
+
+            if redirected_url:
+                break
+
+        if redirected_url:
+            current_url = redirected_url
+            continue
+        raise RuntimeError("; ".join(errors))
+
+    raise RuntimeError("terlalu banyak redirect saat mengunduh PDF BPS")
+
+
+def _uses_private_dns(url):
+    hostname = urllib.parse.urlsplit(url).hostname
+    if not _is_bps_hostname(hostname):
+        return False
+
+    try:
+        addresses = {
+            ipaddress.ip_address(item[4][0])
+            for item in socket.getaddrinfo(
+                hostname,
+                None,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except OSError:
+        return False
+
+    return bool(addresses) and any(
+        not address.is_global for address in addresses
+    )
 
 METRIC_SYNONYMS = {
     # Wisata / Transportasi
@@ -31,6 +181,8 @@ METRIC_SYNONYMS = {
     "nilai": ["amount", "value", "harga"],
     "persentase": ["persen", "prosentase", "%"],
     "laju": ["rate", "rasio"],
+    "pertumbuhan": ["growth", "laju", "kenaikan"],
+    "ekonomi": ["economic", "economy", "pdrb"],
     "indeks": ["index", "idks"],
     "volume": ["kuantitas", "tonase"],
     "omzet": ["pendapatan", "revenue", "sales"],
@@ -45,6 +197,9 @@ METRIC_SYNONYMS = {
     "gizi": ["nutrition", "malnutrition", "status gizi"],
     "stunting": ["stunting", "pendek", "gagal tumbuh"],
     "balita": ["toddler", "anak", "usia dini"],
+    "tbc": ["tuberkulosis", "tb"],
+    "tuberkulosis": ["tbc", "tb"],
+    "tb": ["tbc", "tuberkulosis"],
     # Pendidikan
     "siswa": ["murid", "peserta didik", "student"],
     "sekolah": ["school", "institution"],
@@ -198,30 +353,56 @@ def download_html(url, timeout=60, tag="BPS", validate=None):
     )
 
 
-def download_pdf(url, timeout=120):
-    """Download PDF dari BPS. Return bytes."""
-    for client in ("requests", "urllib"):
+def download_pdf(url, timeout=120, referer=None):
+    """Download PDF dari BPS, memakai header minimal yang kompatibel."""
+    errors = []
+    if _uses_private_dns(url):
         try:
-            if client == "requests":
-                response = requests.get(
-                    url,
-                    headers=PAGE_REQUEST_HEADERS,
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                return response.content
-            else:
+            return _download_pdf_via_public_dns(
+                url,
+                timeout=timeout,
+                referer=referer,
+            )
+        except Exception as error:
+            errors.append(
+                f"public DNS: {error.__class__.__name__}: "
+                f"{str(error).splitlines()[0][:160]}"
+            )
+
+    header_options = [dict(PDF_REQUEST_HEADERS)]
+    if referer:
+        header_options.append({
+            **PDF_REQUEST_HEADERS,
+            "Referer": referer,
+        })
+
+    for header_index, headers in enumerate(header_options, start=1):
+        for client in ("requests", "urllib"):
+            try:
+                if client == "requests":
+                    response = requests.get(
+                        url,
+                        headers=headers,
+                        timeout=timeout,
+                    )
+                    response.raise_for_status()
+                    return response.content
+
                 request = urllib.request.Request(
                     url,
-                    headers=dict(PAGE_REQUEST_HEADERS),
+                    headers=headers,
                 )
                 with urllib.request.urlopen(request, timeout=timeout) as response:
                     return response.read()
 
-        except Exception:
-            continue
+            except Exception as error:
+                errors.append(
+                    f"{client}: {error.__class__.__name__}: "
+                    f"{str(error).splitlines()[0][:120]}"
+                )
 
-    raise RuntimeError(f"Gagal mengunduh PDF dari BPS: {url[:100]}")
+    detail = "; ".join(errors)
+    raise RuntimeError(f"Gagal mengunduh PDF dari BPS ({detail})")
 
 
 def download_file(url, timeout=120):
@@ -384,6 +565,17 @@ def _is_valid_metric_term(term):
     return False
 
 
+def _contains_metric_phrase(text, phrase):
+    """Cocokkan kata/frasa utuh agar sinonim tidak terdeteksi di dalam kata lain."""
+    return bool(
+        re.search(
+            rf"(?<!\w){re.escape(str(phrase).strip())}(?!\w)",
+            str(text or ""),
+            re.IGNORECASE,
+        )
+    )
+
+
 def extract_metric_terms(description):
     """Ekstrak metric terms dari description/nama indikator."""
     lower = str(description or "").lower()
@@ -391,7 +583,7 @@ def extract_metric_terms(description):
 
     for metric, synonyms in METRIC_SYNONYMS.items():
         for syn in [metric] + synonyms:
-            if syn in lower and metric not in terms:
+            if _contains_metric_phrase(lower, syn) and metric not in terms:
                 terms.append(metric)
                 break
 
@@ -410,7 +602,7 @@ def extract_valid_metric_terms(description):
 
     for metric, synonyms in METRIC_SYNONYMS.items():
         for syn in [metric] + synonyms:
-            if syn in lower and metric not in terms:
+            if _contains_metric_phrase(lower, syn) and metric not in terms:
                 if _is_valid_metric_term(metric):
                     terms.append(metric)
                 break
@@ -432,3 +624,151 @@ def detect_rentang(metric_terms):
         return RENTANG_WAJAR["indeks"]
 
     return RENTANG_WAJAR["default"]
+
+
+# =====================================================================
+# Satuan (unit) — deteksi & konversi
+# =====================================================================
+
+# Nama satuan kanonik -> faktor ke rupiah biasa.
+UNIT_FACTORS = {
+    "rupiah": 1,
+    "ribu": 1_000,
+    "juta": 1_000_000,
+    "miliar": 1_000_000_000,
+    "milyar": 1_000_000_000,
+    "triliun": 1_000_000_000_000,
+}
+
+_UNIT_PATTERN = (
+    r"(triliun|milyar|miliar|juta|ribu|rupiah|\brp\b)"
+)
+
+
+def normalize_unit(value):
+    """
+    Samakan istilah satuan ke bentuk kanonik.
+
+    "Rp" / "rupiah" -> "rupiah", "thousand" -> "ribu",
+    "million" -> "juta", "billion" -> "miliar".
+    """
+    text = str(value or "").strip().lower()
+
+    aliases = {
+        "rp": "rupiah",
+        "rupiah": "rupiah",
+        "thousand": "ribu",
+        "ribu": "ribu",
+        "ribuan": "ribu",
+        "million": "juta",
+        "juta": "juta",
+        "billion": "miliar",
+        "miliar": "miliar",
+        "milyar": "miliar",
+        "triliun": "triliun",
+        "trillion": "triliun",
+    }
+
+    return aliases.get(text, text if text in UNIT_FACTORS else "")
+
+
+def detect_unit_in_text(text):
+    """
+    Deteksi satuan dari teks bebas, mis. nama indikator
+    "PDRB per kapita (Rp Juta)" -> "juta".
+
+    "Rp <satuan>" diprioritaskan supaya "Rp Juta" terbaca "juta",
+    bukan "rupiah". Return "" jika tidak ditemukan.
+    """
+    raw = str(text or "")
+
+    # Prioritas: satuan yang mengikuti "Rp" (mis. "Rp Juta", "Rp Miliar").
+    match = re.search(
+        r"\brp\.?\s+(triliun|milyar|miliar|juta|ribuan|ribu)\b",
+        raw,
+        re.IGNORECASE,
+    )
+    if match:
+        return normalize_unit(match.group(1))
+
+    match = re.search(_UNIT_PATTERN, raw, re.IGNORECASE)
+    if not match:
+        return ""
+
+    token = match.group(1).lower()
+
+    if token == "rp":
+        return "rupiah"
+
+    return normalize_unit(token)
+
+
+def detect_page_unit(html):
+    """
+    Deteksi satuan halaman BPS dari metadata (unit_multiplier_desc)
+    atau dari judul tabel, mis. "(ribu rupiah)" -> "ribu".
+
+    Return "" jika tidak ditemukan.
+    """
+    body = str(html or "")
+
+    match = re.search(
+        r"unit_multiplier_desc\\?\"\s*:\s*\\?\"([A-Za-z]+)",
+        body,
+    )
+    if match:
+        unit = normalize_unit(match.group(1))
+        if unit:
+            return unit
+
+    match = re.search(
+        r"\(([^)]*?)\s*(rupiah|rp)\)",
+        body,
+        re.IGNORECASE,
+    )
+    if match:
+        unit = detect_unit_in_text(match.group(1))
+        if unit and unit != "rupiah":
+            return unit
+        if unit == "rupiah" and "ribu" in match.group(1).lower():
+            return "ribu"
+
+    return ""
+
+
+def convert_unit(value, from_unit, to_unit):
+    """
+    Konversi nilai antar satuan (ribu/juta/miliar/triliun/rupiah).
+
+    - from_unit atau to_unit kosong/tidak dikenal -> nilai dikembalikan
+      apa adanya (lebih baik tidak dikonversi daripada salah).
+    - Konversi ke "rupiah" dianggap tujuan generik: faktor asal dipakai
+      langsung tanpa pembagian (mis. ribu -> rupiah = x1000).
+
+    Contoh: convert_unit(40773, "ribu", "juta") -> 40.773
+    """
+    if value is None:
+        return None
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return value
+
+    source = normalize_unit(from_unit)
+    target = normalize_unit(to_unit)
+
+    if not source or not target or source == target:
+        return value
+
+    source_factor = UNIT_FACTORS.get(source)
+    target_factor = UNIT_FACTORS.get(target)
+
+    if not source_factor or not target_factor:
+        return value
+
+    converted = number * source_factor / target_factor
+
+    # Bulatkan maksimal 6 angka di belakang koma supaya tidak ada
+    # artefak floating point (mis. 40.773000000000006).
+    return round(converted, 6)

@@ -7,6 +7,8 @@ from engine.run_indicator import (
     _build_failure_summary,
     process_indicator_job,
 )
+from engine import router
+from engine.detector import SourcePayload
 from engine.formula import calculate_formula
 from engine.instructions import parse_instruction
 from models import IndicatorJob
@@ -54,6 +56,46 @@ def test_rumus_references_sources():
     assert _sources_in_formula("(S1/S2)*100") == {1, 2}
     assert _sources_in_formula("S1+S2+S3") == {1, 2, 3}
     assert _sources_in_formula("S3") == {3}
+
+
+def test_process_indicator_job_rounds_all_output_numbers_to_three_decimals(
+    monkeypatch,
+):
+    from engine import run_indicator
+
+    def fake_scrape(url, **_kwargs):
+        value = 1.23456 if url.endswith("/one") else 3.0
+        return _FakeResult("SUCCESS", value=value)
+
+    monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
+    job = _make_job(
+        Tahun="2024",
+        Sumber_1="https://example.test/one",
+        Sumber_2="https://example.test/two",
+        Data_Diambil_2="nilai",
+        Rumus="S1/S2*100",
+    )
+
+    output = process_indicator_job(job)
+
+    assert output["status"] == "SUCCESS"
+    result = output["results"][0]
+    assert result["nilai_s1"] == 1.235
+    assert result["nilai_s2"] == 3.0
+    assert result["hasil"] == 41.152
+
+
+def test_kalsel_2025_industry_pdrb_share_is_11_615_percent():
+    industry_value = 35_441.11 * 1_000_000
+    total_value = 305_126.93 * 1_000_000
+
+    share = calculate_formula(
+        "S1/S2*100",
+        {"S1": industry_value, "S2": total_value},
+    )
+
+    assert round(share, 3) == 11.615
+    assert round(share, 2) == 11.62
 
 
 def test_unused_source_failure_does_not_become_required():
@@ -202,6 +244,65 @@ def test_network_json_uses_existing_extractor():
     )
     assert result is not None
     assert result.value == 66
+
+
+def test_universal_extractor_runs_before_legacy_adapter(monkeypatch):
+    payload = SourcePayload(
+        url="https://example.test/indeks.csv",
+        final_url="https://example.test/indeks.csv",
+        kind="csv",
+        content=(
+            b"Wilayah,Indeks 2024\n"
+            b"Prov. Kalimantan Selatan,65\n"
+        ),
+        content_type="text/csv",
+    )
+    monkeypatch.setattr(
+        router,
+        "fetch_and_detect",
+        lambda _url: payload,
+    )
+    monkeypatch.setattr(
+        router,
+        "try_legacy_source",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy adapter must not run for parsed data")
+        ),
+    )
+
+    result = router.scrape_source_auto(
+        url=payload.url,
+        tahun=2024,
+        description="Indeks Prov. Kalimantan Selatan",
+        wilayah="Prov. Kalimantan Selatan",
+        kode="2.a",
+        nama_indikator="Indeks",
+    )
+
+    assert result.status == "SUCCESS"
+    assert result.value == 65.0
+
+
+def test_legacy_adapter_selection_does_not_require_indicator_code(
+    monkeypatch,
+    tmp_path,
+):
+    from sources import legacy_bridge
+
+    monkeypatch.setattr(
+        legacy_bridge,
+        "LEGACY_INDICATORS_PATH",
+        str(tmp_path / "no-legacy-adapters"),
+    )
+    result = legacy_bridge.try_legacy_source(
+        url="https://example.test/data.csv",
+        tahun=2024,
+        description="",
+        kode="2.a",
+        nama_indikator="Indikator lain",
+    )
+
+    assert result is None
 
 
 def test_discovery_finds_digital_book_embeds():
@@ -550,8 +651,8 @@ def test_process_indicator_job_scrapes_if_a_requested_region_is_missing(monkeypa
         assert result["wilayah"] not in regions[:-1]
 
 
-def test_process_indicator_job_partial_year_emits_only_missing_region(monkeypatch):
-    """Tahun partial: hanya wilayah yang belum SUCCESS yang dapat baris hasil."""
+def test_process_indicator_job_partial_year_refreshes_existing_regions(monkeypatch):
+    """Scrape sukses pada tahun partial memperbarui semua wilayah."""
     import config
     from engine import run_indicator
 
@@ -564,7 +665,7 @@ def test_process_indicator_job_partial_year_emits_only_missing_region(monkeypatc
 
     monkeypatch.setattr(run_indicator, "scrape_source_auto", fake_scrape)
     regions = config.KALSEL_WILAYAHS[1:]
-    missing = regions[-1]
+    stale_region = regions[0]
     existing_results = [
         {
             "Kode": "TEST",
@@ -583,10 +684,16 @@ def test_process_indicator_job_partial_year_emits_only_missing_region(monkeypatc
         existing_results=existing_results,
     )
 
-    # Hanya wilayah yang kurang yang menghasilkan baris.
-    assert len(output["results"]) == 1
-    assert output["results"][0]["wilayah"] == missing
-    assert output["results"][0]["status"] == "SUCCESS"
+    # Semua wilayah dihasilkan kembali agar nilai SUCCESS lama dapat
+    # diperbarui jika nilainya sudah kedaluwarsa atau salah.
+    assert len(output["results"]) == len(regions)
+    refreshed = {
+        result["wilayah"]: result
+        for result in output["results"]
+    }
+    assert stale_region in refreshed
+    assert refreshed[stale_region]["nilai_s1"] == 80.0
+    assert all(result["status"] == "SUCCESS" for result in refreshed.values())
     assert output["status"] == "SUCCESS"
 
 
@@ -682,8 +789,8 @@ def test_process_indicator_job_stops_after_max_attempts(monkeypatch):
     summary = output["failure_summary"]
     assert "Data tahun 2024" in summary
     assert "tidak berhasil membaca data dari halaman sumber" in summary
-    # Detail teknis exception tidak boleh muncul di ringkasan.
-    assert "koneksi putus" not in summary
+    # Exception teknis ditampilkan agar sumber kegagalan bisa didiagnosis.
+    assert "koneksi putus" in summary
     assert "RuntimeError" not in summary
 
 
@@ -819,6 +926,52 @@ def test_build_failure_summary_friendly():
         )
         == ""
     )
+
+
+def test_build_failure_summary_includes_bps_table_diagnostics():
+    summary = _build_failure_summary(
+        [
+            {
+                "tahun": 2025,
+                "source": 1,
+                "status": "NEED_PARSER",
+                "type": "bps_table_catalog",
+                "message": (
+                    "Katalog BPS termuat, tetapi baris tabel tidak "
+                    "memiliki teks."
+                ),
+                "evidence": [
+                    "catalog_page=true",
+                    "catalog_rows_with_text=0",
+                ],
+            }
+        ],
+        used_sources={1},
+        regions=["Prov. Kalimantan Selatan"],
+    )
+
+    assert "bps_table_catalog" not in summary
+    assert "baris tabel tidak memiliki teks" in summary
+    assert "catalog_page=true" in summary
+    assert "catalog_rows_with_text=0" in summary
+
+
+def test_build_failure_summary_includes_unexpected_parser_exceptions():
+    summary = _build_failure_summary(
+        [
+            {
+                "tahun": 2024,
+                "source": 1,
+                "status": "NEED_PARSER",
+                "message": "TypeError: unexpected parser argument",
+                "error": True,
+            }
+        ],
+        used_sources={1},
+        regions=["Prov. Kalimantan Selatan"],
+    )
+
+    assert "TypeError: unexpected parser argument" in summary
 
 
 if __name__ == "__main__":

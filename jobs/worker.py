@@ -29,6 +29,7 @@ from models import IndicatorJob
 
 
 CANCEL_POLL_SECONDS = 2
+PROGRESS_UPDATE_INTERVAL_SECONDS = 5
 
 
 def _job_child(
@@ -161,26 +162,38 @@ def _mark_job(job_id, status, progress=None, error="", diagnostics=None):
         )
 
 
-def _drain_progress(progress_queue, job_id):
+def _drain_progress(progress_queue, job_id, progress_state):
     """
-    Ambil semua update progress dari child (non-blocking)
-    dan teruskan ke Apps Script.
+    Gabungkan pesan progress dan batasi frekuensi update ke Apps Script.
     """
     while True:
         try:
             info = progress_queue.get_nowait()
         except queue.Empty:
-            return
+            break
 
         if not isinstance(info, dict):
             continue
 
-        _mark_job(
-            job_id,
-            "PROCESSING",
-            progress=info.get("progress"),
-            error=str(info.get("message") or "")[:300],
-        )
+        progress_state["latest"] = info
+
+    latest = progress_state.get("latest")
+    now = time.monotonic()
+    if (
+        latest is None
+        or now - progress_state["last_sent"]
+        < PROGRESS_UPDATE_INTERVAL_SECONDS
+    ):
+        return
+
+    _mark_job(
+        job_id,
+        "PROCESSING",
+        progress=latest.get("progress"),
+        error=str(latest.get("message") or "")[:300],
+    )
+    progress_state["last_sent"] = now
+    progress_state["latest"] = None
 
 
 def process_one(raw_job):
@@ -219,6 +232,11 @@ def process_one(raw_job):
             f"{str(error).splitlines()[0][:300]}"
         )
         return
+
+    progress_state = {
+        "last_sent": time.monotonic(),
+        "latest": None,
+    }
 
     try:
         existing_results = get_existing_results(job.kode)
@@ -273,6 +291,7 @@ def process_one(raw_job):
             _drain_progress(
                 progress_queue,
                 job.job_id,
+                progress_state,
             )
 
             time.sleep(
@@ -329,6 +348,7 @@ def process_one(raw_job):
         _drain_progress(
             progress_queue,
             job.job_id,
+            progress_state,
         )
 
     if timed_out:

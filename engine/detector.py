@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from urllib.parse import urlparse
@@ -135,10 +136,39 @@ def detect_kind(
         return "spa" if _looks_like_spa(text) else "html"
 
 
+def _resolve_gdrive_url(url: str) -> str:
+    """
+    URL share Google Drive (/file/d/<id>/view atau open?id=<id>) adalah
+    halaman viewer HTML; file aslinya baru terunduh lewat endpoint
+    uc?export=download. Tanpa resolusi ini payload terdeteksi kind=html
+    dan extractor PDF tidak pernah terpanggil.
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host not in {"drive.google.com", "docs.google.com"}:
+        return url
+
+    match = re.search(r"/file/d/([a-zA-Z0-9_-]+)", parsed.path)
+    if match is None:
+        match = re.search(
+            r"(?:^|&)id=([a-zA-Z0-9_-]+)(?:&|$)",
+            parsed.query,
+        )
+    if match is None:
+        return url
+
+    return (
+        "https://drive.google.com/uc?"
+        f"export=download&id={match.group(1)}"
+    )
+
+
 def fetch_and_detect(url: str, timeout: int = 90) -> SourcePayload:
     url = str(url or "").strip()
     if not url:
         raise ValueError("URL sumber kosong")
+
+    url = _resolve_gdrive_url(url)
 
     response = requests.get(
         url,

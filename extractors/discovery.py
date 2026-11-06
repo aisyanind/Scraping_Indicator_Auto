@@ -565,7 +565,11 @@ def extract_discovery(payload, instruction, tahun, depth=0):
 
     # 3) Render SPA atau HTML viewer yang kosong agar JavaScript dan
     # network API-nya dapat diamati browser.
-    if payload.kind in {"html", "spa"} and depth < MAX_DEPTH:
+    # Hanya depth 0 yang di-render: sub-halaman depth >= 1 cukup fetch
+    # biasa + ekstrak tabel. Render Chrome per sub-halaman membuat
+    # 1 attempt menembak >9 Chrome launch + OCR dan melewati
+    # JOB_TIMEOUT_SECONDS.
+    if payload.kind in {"html", "spa"} and depth == 0:
         try:
             from extractors.browser import render_page_capture_network
 

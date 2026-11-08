@@ -31,6 +31,11 @@ _CACHE = {}
 _BPS_ACTION_CACHE = {}
 
 
+def _scope_kwargs(cakupan_wilayah):
+    """Pass the new scope argument only when a job actually has one."""
+    return {"cakupan_wilayah": cakupan_wilayah} if cakupan_wilayah else {}
+
+
 def _is_bps_statistics_table_listing(url):
     parsed = urlsplit(str(url or ""))
     host = (parsed.hostname or "").lower()
@@ -118,16 +123,36 @@ def _table_title_score(title, terms):
 
 
 def _metric_terms(description, nama_indikator=None):
-    text = " ".join(
-        part
-        for part in (str(description or ""), str(nama_indikator or ""))
-        if part
+    """
+    Ekstrak istilah metrik tanpa mencampurkan instruksi cakupan wilayah.
+
+    Prioritas:
+      1. Nama indikator (sumber paling stabil untuk identitas metrik).
+      2. Istilah metrik yang dikenali dari deskripsi sumber jika nama
+         indikator belum memberikan istilah metrik.
+      3. Token mentah hanya dari nama indikator, bukan seluruh konteks
+         deskripsi yang dapat berisi "cakupan IDSD Kalsel", kode, dll.
+    """
+    description_text = str(description or "").strip()
+    name_text = str(nama_indikator or "").strip()
+    combined_text = " ".join(
+        part for part in (name_text, description_text) if part
     )
-    terms = extract_metric_terms(text)
-    if _is_poverty_rate_request(text) and "persentase" not in terms:
+
+    primary_text = name_text or description_text
+    terms = extract_metric_terms(primary_text)
+
+    # Gunakan deskripsi sebagai fallback hanya bila nama indikator
+    # tidak menghasilkan metrik yang dikenali.
+    if not terms and description_text and name_text:
+        terms = extract_metric_terms(description_text)
+
+    if _is_poverty_rate_request(combined_text) and "persentase" not in terms:
         terms.insert(0, "persentase")
+
     if (
-        ("%" in text or re.search(r"\bpersen(?:tase)?\b", text, re.I))
+        ("%" in combined_text
+         or re.search(r"\bpersen(?:tase)?\b", combined_text, re.I))
         and "persentase" not in terms
     ):
         terms.insert(0, "persentase")
@@ -136,12 +161,20 @@ def _metric_terms(description, nama_indikator=None):
         "kode", "ambil", "data", "indikator", "tahun", "untuk",
         "dengan", "pada", "dari", "yang", "dan", "di", "seluruh",
         "semua", "prov", "provinsi", "kab", "kabupaten", "kota",
-        "wilayah", "daerah", "terbaru",
+        "wilayah", "daerah", "terbaru", "nilai", "sumber",
+        "cakupan", "idsd", "kalsel", "kalimantan", "selatan",
+        "per",
     }
+
     terms = list(dict.fromkeys(
         term for term in terms if term not in ignored
     ))
-    for token in re.findall(r"[a-z]{3,}", text.lower()):
+
+    # Token mentah hanya diambil dari nama indikator. Ini mempertahankan
+    # kata khusus seperti "pengolahan" atau "kapita" tanpa menarik kata
+    # instruksi wilayah dari Data_Diambil.
+    raw_metric_text = name_text or description_text
+    for token in re.findall(r"[a-z]{3,}", raw_metric_text.lower()):
         if token not in ignored and token not in terms:
             terms.append(token)
 
@@ -1219,6 +1252,7 @@ def _extract_bps_action_result(
     description=None,
     wilayah=None,
     nama_indikator=None,
+    cakupan_wilayah=None,
 ):
     status, data, detail = _fetch_bps_year_data(url, html, tahun)
     if status == "unsupported":
@@ -1259,6 +1293,7 @@ def _extract_bps_action_result(
             ) if part
         ),
         default_wilayah=str(wilayah or ""),
+            **_scope_kwargs(cakupan_wilayah),
     )
     values = _pick_regions_from_rsc(
         data,
@@ -1343,14 +1378,30 @@ def _extract_bps_table_detail(
     description=None,
     wilayah=None,
     nama_indikator=None,
+    cakupan_wilayah=None,
 ):
     from models import ExtractionResult
     from engine.instructions import parse_instruction
 
-    html = download_html(
-        with_year_param(url, tahun),
-        tag="BPS-TABLE",
-    )
+    try:
+        html = download_html(
+            with_year_param(url, tahun),
+            tag="BPS-TABLE",
+        )
+    except Exception as error:
+        browser_result = _extract_bps_browser_fallback(
+            url,
+            tahun,
+            description=description,
+            wilayah=wilayah,
+            nama_indikator=nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
+        )
+        browser_result.message = (
+            f"Download HTML BPS gagal: {str(error).splitlines()[0][:180]} | "
+            f"{browser_result.message}"
+        )
+        return browser_result
     metrics = _metric_terms(description, nama_indikator)
     instruction = parse_instruction(
         " ".join(
@@ -1360,10 +1411,13 @@ def _extract_bps_table_detail(
             ) if part
         ),
         default_wilayah=str(wilayah or ""),
+            **_scope_kwargs(cakupan_wilayah),
     )
     instruction.metric_terms = metrics
 
     table = parse_bps_statistics_table(html)
+    action_fallback = None
+
     if table is None:
         action_result = _extract_bps_action_result(
             url,
@@ -1372,9 +1426,22 @@ def _extract_bps_table_detail(
             description,
             wilayah,
             nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
         )
         if action_result is not None:
-            return action_result
+            if action_result.status == "SUCCESS":
+                return action_result
+            if (
+                action_result.status == "DATA_TIDAK_ADA"
+                and any(
+                    str(item).startswith("list_tahun=")
+                    for item in action_result.evidence
+                )
+            ):
+                return action_result
+            # NEED_PARSER bukan hasil final. Lanjutkan ke parser RSC/HTML
+            # yang sudah tersedia sebelum refactor Server Action.
+            action_fallback = action_result
 
     if table is not None:
         page_year = table.get("tahun_data") or extract_table_year(html)
@@ -1386,14 +1453,31 @@ def _extract_bps_table_detail(
                 description,
                 wilayah,
                 nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
             )
             if action_result is not None:
-                return action_result
-            return None
+                if action_result.status == "SUCCESS":
+                    return action_result
+                if (
+                    action_result.status == "DATA_TIDAK_ADA"
+                    and any(
+                        str(item).startswith("list_tahun=")
+                        for item in action_result.evidence
+                    )
+                ):
+                    return action_result
+                action_fallback = action_result
+
+            available = table.get("list_tahun") or []
+            if available and int(tahun) not in [int(x) for x in available]:
+                return None
+            # Jangan gunakan tabel yang jelas-jelas memuat tahun berbeda.
+            # Coba parser RSC/HTML lama di bawah.
+            table = None
         col_id, _meta = _pick_column(
             table,
             metrics,
-            description or nama_indikator,
+            f"{description or ''} {nama_indikator or ''}",
         )
         values = _match_rows(
             table,
@@ -1446,7 +1530,31 @@ def _extract_bps_table_detail(
         if result.value is not None and result.status in {"SUCCESS", "REVIEW"}:
             return result
 
-    return None
+    # Fallback tanpa API key: render halaman, baca tabel DOM dan respons
+    # text/x-component dari browser. Hanya dijalankan setelah parser HTTP
+    # dan payload yang tertanam tidak berhasil.
+    browser_result = _extract_bps_browser_fallback(
+        url,
+        tahun,
+        description=description,
+        wilayah=wilayah,
+        nama_indikator=nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
+    )
+    if browser_result.status in {"SUCCESS", "REVIEW"}:
+        return browser_result
+
+    if action_fallback is not None:
+        if browser_result.message:
+            action_fallback.message = (
+                f"{action_fallback.message} | {browser_result.message}"
+            )
+        action_fallback.evidence = list(action_fallback.evidence or []) + list(
+            browser_result.evidence or []
+        )
+        return action_fallback
+
+    return browser_result
 
 
 def _extract_from_next_data(data, metric_terms, target_wilayah, tahun):
@@ -1588,8 +1696,229 @@ def _extract_value_raw_with_context(html, metric_terms):
 # 3. Entry point
 # =====================================================================
 
+
+def _extract_bps_browser_fallback(
+    url,
+    tahun,
+    description=None,
+    wilayah=None,
+    nama_indikator=None,
+    cakupan_wilayah=None,
+):
+    """
+    Fallback tanpa API key untuk tabel BPS yang hanya memuat data setelah
+    JavaScript/Next.js berjalan.
+
+    Browser menangani interaksi tahun; adapter ini membaca:
+      1. tabel HTML hasil render;
+      2. payload React Server Components dari respons text/x-component;
+      3. JSON yang memuat datacontent.
+    """
+    from models import ExtractionResult
+    from engine.instructions import parse_instruction
+
+    try:
+        from extractors.browser import render_page_capture_network
+
+        rendered_html, network_responses, _screenshot = (
+            render_page_capture_network(
+                url,
+                wait_seconds=4,
+                select_year=int(tahun),
+            )
+        )
+    except Exception as error:
+        return ExtractionResult(
+            status="NEED_PARSER",
+            value=None,
+            confidence=0.0,
+            source_type="bps_table_browser",
+            message=(
+                "Browser fallback BPS gagal: "
+                f"{error.__class__.__name__}: "
+                f"{str(error).splitlines()[0][:180]}"
+            ),
+            evidence=["browser_fallback_attempted=true"],
+        )
+
+    request_text = " | ".join(
+        part
+        for part in (
+            str(nama_indikator or "").strip(),
+            str(description or "").strip(),
+        )
+        if part
+    )
+    metrics = _metric_terms(description, nama_indikator)
+    instruction = parse_instruction(
+        request_text,
+        default_wilayah=str(wilayah or ""),
+            **_scope_kwargs(cakupan_wilayah),
+    )
+    instruction.metric_terms = metrics
+    targets = instruction.target_wilayahs or (
+        [str(wilayah).strip()] if wilayah else []
+    )
+    print(
+        f"    [BROWSER] Scope={instruction.coverage_scope}; "
+        f"targets={len(targets)}"
+    )
+
+    # A. Coba tabel HTML yang benar-benar sudah dirender oleh browser.
+    html_table_count = 0
+    try:
+        frames = pd.read_html(
+            StringIO(rendered_html or ""),
+            decimal=",",
+            thousands=".",
+        )
+        html_table_count = len(frames)
+    except (ValueError, ImportError):
+        frames = []
+    except Exception:
+        frames = []
+
+    if frames:
+        try:
+            from engine.tabular import extract_from_dataframes
+
+            result = extract_from_dataframes(
+                frames,
+                instruction,
+                int(tahun),
+                source_type="bps_table_browser_dom",
+            )
+            if (
+                result is not None
+                and result.value is not None
+                and result.status in {"SUCCESS", "REVIEW"}
+            ):
+                result.source_type = "bps_table_browser_dom"
+                result.evidence = list(result.evidence or []) + [
+                    "browser_fallback_attempted=true",
+                    f"browser_dom_tables={html_table_count}",
+                    f"browser_network_responses={len(network_responses)}",
+                ]
+                return result
+        except Exception:
+            pass
+
+    # B. Beberapa halaman BPS masih menyimpan datacontent pada RSC HTML.
+    rsc_data = _extract_from_rsc_payload(rendered_html or "")
+    if rsc_data is not None:
+        values = _pick_regions_from_rsc(
+            rsc_data,
+            metrics,
+            targets,
+            int(tahun),
+        )
+        if values:
+            return ExtractionResult(
+                status="SUCCESS",
+                value=values,
+                confidence=0.94,
+                source_type="bps_table_browser_rsc",
+                message=(
+                    f"Data BPS tahun {tahun} berhasil dibaca dari "
+                    "payload RSC hasil render browser."
+                ),
+                evidence=[
+                    "browser_fallback_attempted=true",
+                    f"browser_dom_tables={html_table_count}",
+                    f"browser_network_responses={len(network_responses)}",
+                ],
+            )
+
+    # C. Data Dynamic Table sering dikirim melalui Server Action Next.js.
+    # Responsnya berjenis text/x-component (Flight/RSC), bukan JSON biasa.
+    response_types = []
+    for response_url, raw_content, content_type in network_responses:
+        content_type = str(content_type or "").lower()
+        response_types.append(content_type or "unknown")
+
+        if isinstance(raw_content, bytes):
+            body_text = raw_content.decode("utf-8", "replace")
+        else:
+            body_text = str(raw_content or "")
+
+        data_obj = _parse_flight_datacontent(body_text)
+
+        if data_obj is None:
+            try:
+                parsed_json = json.loads(body_text)
+                data_obj = _find_nested_datacontent(parsed_json)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                data_obj = None
+
+        if data_obj is None:
+            # Beberapa respons Flight membungkus object dalam bentuk
+            # chunk self.__next_f.push yang sama dengan HTML halaman.
+            data_obj = _extract_from_rsc_payload(body_text)
+
+        if data_obj is None:
+            continue
+
+        values = _pick_regions_from_rsc(
+            data_obj,
+            metrics,
+            targets,
+            int(tahun),
+        )
+        if not values:
+            continue
+
+        return ExtractionResult(
+            status="SUCCESS",
+            value=values,
+            confidence=0.96,
+            source_type="bps_table_browser_network",
+            message=(
+                f"Data BPS tahun {tahun} berhasil dibaca dari "
+                "respons browser Next.js Server Action."
+            ),
+            evidence=[
+                "browser_fallback_attempted=true",
+                f"network_response_url={response_url}",
+                f"network_content_type={content_type or 'unknown'}",
+                f"browser_network_responses={len(network_responses)}",
+                f"baris={len(values)}",
+            ],
+        )
+
+    # D. Jika tidak ada payload yang cocok, simpan diagnosis yang cukup
+    # untuk membedakan sesi browser gagal, tabel DOM kosong, dan respons
+    # network yang tidak memuat data tabel.
+    unique_types = sorted(set(response_types))
+    return ExtractionResult(
+        status="NEED_PARSER",
+        value=None,
+        confidence=0.0,
+        source_type="bps_table_browser",
+        message=(
+            "Browser BPS berhasil dijalankan tetapi data tabel tidak "
+            "ditemukan pada DOM maupun respons network. "
+            f"Tahun={tahun}; tabel_DOM={html_table_count}; "
+            f"respons_network={len(network_responses)}; "
+            f"content_type={unique_types[:8]}."
+        ),
+        evidence=[
+            "browser_fallback_attempted=true",
+            f"browser_dom_tables={html_table_count}",
+            f"browser_network_responses={len(network_responses)}",
+            f"browser_network_types={','.join(unique_types[:8])}",
+            f"browser_targets={targets}",
+            f"browser_metric_terms={metrics}",
+        ],
+    )
+
+
 def try_bps_table(
-    url, tahun, description=None, wilayah=None, nama_indikator=None
+    url,
+    tahun,
+    description=None,
+    wilayah=None,
+    nama_indikator=None,
+    cakupan_wilayah=None,
 ):
     """
     Template universal untuk tabel BPS /statistics-table/.
@@ -1640,6 +1969,7 @@ def try_bps_table(
             description=description,
             wilayah=wilayah,
             nama_indikator=nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
         )
         if result is None:
             from models import ExtractionResult
@@ -1667,6 +1997,7 @@ def try_bps_table(
         str(description or ""),
         str(wilayah or ""),
         str(nama_indikator or ""),
+        str(cakupan_wilayah or ""),
     )
     if cache_key in _CACHE:
         from models import ExtractionResult
@@ -1681,10 +2012,26 @@ def try_bps_table(
 
     metric_terms = _metric_terms(description, nama_indikator)
     rentang = detect_rentang(metric_terms)
+    from engine.instructions import parse_instruction
+    scope_instruction = parse_instruction(
+        " | ".join(
+            part for part in (
+                str(nama_indikator or "").strip(),
+                str(description or "").strip(),
+            ) if part
+        ),
+        default_wilayah=str(wilayah or ""),
+            **_scope_kwargs(cakupan_wilayah),
+    )
 
     print(
         f"    [BPS-TABLE] Template: metric={metric_terms}, "
         f"rentang={rentang}, tahun={tahun}"
+    )
+    print(
+        f"    [BPS-TABLE] Scope={scope_instruction.coverage_scope}; "
+        f"targets={len(scope_instruction.target_wilayahs)}; "
+        f"wilayah={scope_instruction.target_wilayahs}"
     )
 
     target_url = with_year_param(url, tahun)
@@ -1692,20 +2039,26 @@ def try_bps_table(
     try:
         html = download_html(target_url, tag="BPS-TABLE")
     except Exception as error:
-        from models import ExtractionResult
-        return ExtractionResult(
-            status="NEED_PARSER",
-            value=None,
-            confidence=0.0,
-            source_type="bps_table",
-            message=f"Gagal download: {str(error)[:200]}",
-            evidence=[],
+        browser_result = _extract_bps_browser_fallback(
+            url,
+            tahun,
+            description=description,
+            wilayah=wilayah,
+            nama_indikator=nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
         )
+        browser_result.message = (
+            f"Gagal download HTML BPS: "
+            f"{str(error).splitlines()[0][:180]} | "
+            f"{browser_result.message}"
+        )
+        return browser_result
 
     # ------------------------------------------------------------
     # A. Jalur terstruktur (universal penuh)
     # ------------------------------------------------------------
     table = parse_bps_statistics_table(html)
+    action_fallback = None
 
     if table is None:
         action_result = _extract_bps_action_result(
@@ -1715,11 +2068,23 @@ def try_bps_table(
             description,
             wilayah,
             nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
         )
         if action_result is not None:
             if action_result.status == "SUCCESS":
                 _CACHE[cache_key] = action_result.value
-            return action_result
+                return action_result
+            if (
+                action_result.status == "DATA_TIDAK_ADA"
+                and any(
+                    str(item).startswith("list_tahun=")
+                    for item in action_result.evidence
+                )
+            ):
+                return action_result
+            # Kegagalan menemukan Server Action/webpack tidak boleh
+            # menghentikan fallback RSC, __NEXT_DATA__, dan value_raw.
+            action_fallback = action_result
 
     if table is not None:
         # Gerbang tahun: halaman wajib memuat tahun yang diminta.
@@ -1735,11 +2100,21 @@ def try_bps_table(
                 description,
                 wilayah,
                 nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
             )
             if action_result is not None:
                 if action_result.status == "SUCCESS":
                     _CACHE[cache_key] = action_result.value
-                return action_result
+                    return action_result
+                if (
+                    action_result.status == "DATA_TIDAK_ADA"
+                    and any(
+                        str(item).startswith("list_tahun=")
+                        for item in action_result.evidence
+                    )
+                ):
+                    return action_result
+                action_fallback = action_result
 
             available = table.get("list_tahun") or []
             from models import ExtractionResult
@@ -1757,17 +2132,10 @@ def try_bps_table(
                     evidence=[f"list_tahun={available}"],
                 )
 
-            return ExtractionResult(
-                status="NEED_PARSER",
-                value=None,
-                confidence=0.0,
-                source_type="bps_table",
-                message=(
-                    f"Halaman BPS memuat tahun {tahun_data}, "
-                    f"bukan {tahun}."
-                ),
-                evidence=[f"tahun_data={tahun_data}"],
-            )
+            # Tabel terstruktur berisi tahun lain; jangan ekstrak dari tabel
+            # tersebut. Lanjutkan ke parser payload yang dapat memuat tahun
+            # target atau data yang diserialisasi dalam RSC.
+            table = None
 
         col_id, col_meta = _pick_column(
             table,
@@ -1789,6 +2157,19 @@ def try_bps_table(
                     for meta in (table.get("kolom") or {}).values()
                 )
             )
+            if not is_wrong_poverty_measure:
+                browser_result = _extract_bps_browser_fallback(
+                    url,
+                    tahun,
+                    description=description,
+                    wilayah=wilayah,
+                    nama_indikator=nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
+                )
+                if browser_result.status in {"SUCCESS", "REVIEW"}:
+                    _CACHE[cache_key] = browser_result.value
+                    return browser_result
+
             return ExtractionResult(
                 status="NEED_PARSER",
                 value=None,
@@ -1800,16 +2181,32 @@ def try_bps_table(
                     if is_wrong_poverty_measure
                     else
                     "Struktur tabel BPS terbaca tetapi tidak ada "
-                    "kolom variabel yang bisa dibaca."
+                    "kolom variabel yang bisa dibaca. "
+                    f"{browser_result.message if not is_wrong_poverty_measure else ''}"
                 ),
-                evidence=[f"baris={len(table.get('rows') or [])}"],
+                evidence=[
+                    f"baris={len(table.get('rows') or [])}",
+                    *(
+                        browser_result.evidence
+                        if not is_wrong_poverty_measure
+                        else []
+                    ),
+                ],
             )
 
         from engine.instructions import parse_instruction
 
         instruction = parse_instruction(
-            str(description or ""),
+            " | ".join(
+                part
+                for part in (
+                    str(nama_indikator or "").strip(),
+                    str(description or "").strip(),
+                )
+                if part
+            ),
             default_wilayah=str(wilayah or ""),
+            **_scope_kwargs(cakupan_wilayah),
         )
         targets = instruction.target_wilayahs or []
 
@@ -1921,7 +2318,7 @@ def try_bps_table(
     if rsc_data is not None:
         nilai = _pick_best_from_rsc(rsc_data, metric_terms, wilayah, tahun)
         if nilai is not None and _within_metric_range(nilai, metric_terms):
-            _CACHE[cache_key] = _legacy_value(nilai, description, wilayah)
+            _CACHE[cache_key] = _legacy_value(nilai, description, wilayah, cakupan_wilayah)
             from models import ExtractionResult
             return ExtractionResult(
                 status="SUCCESS",
@@ -1943,7 +2340,7 @@ def try_bps_table(
             data = json.loads(next_match.group(1))
             nilai = _extract_from_next_data(data, metric_terms, wilayah, tahun)
             if nilai is not None and _within_metric_range(nilai, metric_terms):
-                _CACHE[cache_key] = _legacy_value(nilai, description, wilayah)
+                _CACHE[cache_key] = _legacy_value(nilai, description, wilayah, cakupan_wilayah)
                 from models import ExtractionResult
                 return ExtractionResult(
                     status="SUCCESS",
@@ -1958,7 +2355,7 @@ def try_bps_table(
 
     nilai = _extract_value_raw_with_context(html, metric_terms)
     if nilai is not None and _within_metric_range(nilai, metric_terms):
-        _CACHE[cache_key] = _legacy_value(nilai, description, wilayah)
+        _CACHE[cache_key] = _legacy_value(nilai, description, wilayah, cakupan_wilayah)
         from models import ExtractionResult
         return ExtractionResult(
             status="SUCCESS",
@@ -1971,40 +2368,58 @@ def try_bps_table(
 
     from models import ExtractionResult
 
-    # Halaman shell-kosong (BPS mengirim halaman tanpa data saat tahun
-    # diminta tidak tersedia). Semua jalur gagal karena memang tidak
-    # ada data — bukan format tak dikenal. Laporkan DATA_TIDAK_ADA
-    # supaya worker tidak retry percuma.
-    has_any_data = (
-        "value_raw" in html
-        or "datacontent" in html
-        or "__NEXT_DATA__" in html
-        or "judul_tabel" in html
+    # Fallback terakhir tanpa API key. Dipanggil hanya setelah HTML,
+    # payload RSC, __NEXT_DATA__, dan value_raw tidak menghasilkan nilai.
+    browser_result = _extract_bps_browser_fallback(
+        url,
+        tahun,
+        description=description,
+        wilayah=wilayah,
+        nama_indikator=nama_indikator,
+            **_scope_kwargs(cakupan_wilayah),
     )
-    if not has_any_data:
-        return ExtractionResult(
-            status="DATA_TIDAK_ADA",
-            value=None,
-            confidence=0.0,
-            source_type="bps_table",
-            message=(
-                f"Halaman BPS tidak memuat data tabel untuk tahun "
-                f"{tahun} (kemungkinan tahun tidak tersedia)."
-            ),
-            evidence=[f"tahun_diminta={tahun}"],
+    if browser_result.status in {"SUCCESS", "REVIEW"}:
+        _CACHE[cache_key] = browser_result.value
+        return browser_result
+
+    # Jika Server Action sudah memastikan tahun memang tidak tersedia,
+    # status tersebut dipertahankan. Kegagalan browser tidak mengubahnya.
+    if (
+        action_fallback is not None
+        and action_fallback.status == "DATA_TIDAK_ADA"
+    ):
+        action_fallback.message = (
+            f"{action_fallback.message} | {browser_result.message}"
         )
+        action_fallback.evidence = list(
+            action_fallback.evidence or []
+        ) + list(browser_result.evidence or [])
+        return action_fallback
+
+    message = (
+        f"Tidak ditemukan data BPS yang cocok (metric={metric_terms})"
+    )
+    evidence = []
+    if action_fallback is not None:
+        if action_fallback.message:
+            message += f" | Server Action: {action_fallback.message}"
+        evidence.extend(action_fallback.evidence or [])
+
+    if browser_result.message:
+        message += f" | Browser: {browser_result.message}"
+    evidence.extend(browser_result.evidence or [])
 
     return ExtractionResult(
         status="NEED_PARSER",
         value=None,
         confidence=0.0,
         source_type="bps_table",
-        message=f"Tidak ditemukan data BPS yang cocok (metric={metric_terms})",
-        evidence=[],
+        message=message,
+        evidence=evidence,
     )
 
 
-def _legacy_value(nilai, description, wilayah):
+def _legacy_value(nilai, description, wilayah, cakupan_wilayah=None):
     """
     Bungkus nilai tunggal jalur lama.
 
@@ -2016,6 +2431,7 @@ def _legacy_value(nilai, description, wilayah):
     instruction = parse_instruction(
         str(description or ""),
         default_wilayah=str(wilayah or ""),
+            **_scope_kwargs(cakupan_wilayah),
     )
     targets = instruction.target_wilayahs or []
 

@@ -114,6 +114,7 @@ class IndicatorJob:
     sumber_3: str = ""
     data_diambil_3: str = ""
     rumus: str = "S1"
+    cakupan_wilayah: str = ""
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -136,4 +137,5 @@ class IndicatorJob:
             sumber_3=get("Sumber_3", "sumber_3"),
             data_diambil_3=get("Data_Diambil_3", "data_diambil_3"),
             rumus=get("Rumus", "rumus", default="S1") or "S1",
+            cakupan_wilayah=get("Cakupan_Wilayah", "cakupan_wilayah"),
         )

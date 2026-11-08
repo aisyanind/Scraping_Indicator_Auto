@@ -6,7 +6,9 @@ import pandas as pd
 from models import ExtractionResult
 from engine.instructions import Instruction
 from sources.bps_utils import METRIC_SYNONYMS
-from sources.region_utils import normalize_region, normalize_text, REGION_ALIASES
+from sources.region_utils import (
+    normalize_region, normalize_text, REGION_ALIASES, regions_match,
+)
 
 
 REGION_HINTS = {
@@ -107,31 +109,51 @@ def _find_columns(df: pd.DataFrame, hints: set[str]) -> list[str]:
     return matches
 
 
+def _cell_matches_target_region(value, targets) -> bool:
+    """True hanya untuk label sel yang sama dengan salah satu target wilayah."""
+    text = str(value or "").strip()
+    if not text or text.lower() in {"nan", "none", "-"}:
+        return False
+    return any(regions_match(text, target) for target in targets)
+
+
 def _find_region_columns(
     df: pd.DataFrame,
     instruction: "Instruction",
 ) -> list[str]:
+    """Deteksi kolom label wilayah tanpa menganggap judul metrik sebagai wilayah.
+
+    Header generik seperti ``Kabupaten/Kota + Provinsi`` baru dianggap
+    kolom wilayah jika isi kolomnya benar-benar memuat label target. Header
+    wide yang merupakan nama wilayah harus cocok secara identik setelah
+    normalisasi; pencocokan substring sengaja dihindari.
     """
-    Selain kolom berisi hint wilayah, deteksi juga kolom yang header-nya
-    adalah nama wilayah (format wide: tahun di baris, wilayah di kolom).
-    """
-    cols = _find_columns(df, REGION_HINTS)
+    targets = instruction.target_wilayahs or []
+    cols = []
 
     for col in df.columns:
-        c = normalize_text(col)
+        header = normalize_text(col)
+        header_is_region = any(
+            regions_match(col, target) for target in targets
+        )
+        if header_is_region:
+            cols.append(col)
+            continue
 
-        for target in instruction.target_wilayahs:
-            bare = re.sub(
-                r"^(prov\.|kab\.|kota)\s+",
-                "",
-                normalize_region(target),
-            )
-            if not bare:
-                continue
-            if bare == c or bare in c:
-                if col not in cols:
-                    cols.append(col)
-                    break
+        header_has_region_hint = any(
+            hint in header for hint in REGION_HINTS
+        )
+        if not header_has_region_hint:
+            continue
+
+        # Header generik saja belum cukup. Isi kolom harus berisi label
+        # wilayah yang cocok dengan target, bukan angka/nilai indikator.
+        values = df[col].dropna().astype(str).map(str.strip)
+        matched = values.map(
+            lambda value: _cell_matches_target_region(value, targets)
+        )
+        if matched.any():
+            cols.append(col)
 
     return cols
 
@@ -317,25 +339,36 @@ def extract_from_dataframes(
 
             # Wide format: header kolom nilai adalah nama wilayah
             # (mis. kolom "KALIMANTAN SELATAN" berisi nilai per tahun).
-            value_col_norm = normalize_text(value_col)
             wide_target = None
 
+            # Wide format hanya valid jika header kolom identik dengan nama
+            # target wilayah setelah normalisasi. Hindari substring karena
+            # judul metrik dapat memuat nama provinsi/kabupaten.
             for target in instruction.target_wilayahs:
-                bare = re.sub(
-                    r"^(prov\.|kab\.|kota)\s+",
-                    "",
-                    normalize_region(target),
-                )
-                if not bare:
-                    continue
-                if bare == value_col_norm or bare in value_col_norm:
+                if regions_match(value_col, target):
                     wide_target = target
                     break
 
             if wide_target is not None:
-                values = work["__value__"].dropna()
-                if not values.empty:
-                    region_values[wide_target] = float(values.iloc[0])
+                # Satu tabel wide dapat memiliki banyak kolom wilayah.
+                # Kumpulkan semuanya dalam satu hasil, jangan hanya kolom
+                # kandidat pertama yang kebetulan memperoleh ranking tertinggi.
+                for target in instruction.target_wilayahs:
+                    target_col = next(
+                        (
+                            col for col in region_cols
+                            if regions_match(col, target)
+                        ),
+                        None,
+                    )
+                    if target_col is None:
+                        continue
+
+                    target_values = _numeric_series(work[target_col]).dropna()
+                    if not target_values.empty:
+                        region_values[target] = float(target_values.iloc[0])
+
+                if region_values:
                     region_conf = 0.35
             elif region_cols:
                 # Sel yang memuat nama lebih dari satu target wilayah
@@ -374,13 +407,24 @@ def extract_from_dataframes(
 
                     if found_value is None:
                         for col in region_cols:
-                            normalized = work[col].map(normalize_region)
-                            exact = work[normalized == target_norm]
+                            labels = work[col].astype(str)
+                            exact_mask = labels.map(
+                                lambda label: regions_match(label, target)
+                            )
+                            exact = work[exact_mask]
+
                             if exact.empty:
-                                # fallback containment for source labels without prefix
-                                bare = re.sub(r"^(prov\.|kab\.|kota)\s+", "", target_norm)
+                                # Fallback konservatif untuk label dengan
+                                # tambahan keterangan; wajib diawali nama
+                                # wilayah agar tidak cocok dengan substring.
+                                bare = re.sub(
+                                    r"^(prov\.|kab\.|kota)\s+",
+                                    "",
+                                    target_norm,
+                                )
+                                normalized = labels.map(normalize_region)
                                 mask = normalized.str.contains(
-                                    re.escape(bare),
+                                    r"^" + re.escape(bare) + r"(?:\s|$)",
                                     regex=True,
                                     na=False,
                                 )

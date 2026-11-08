@@ -2,7 +2,11 @@ from utils import *
 import re
 import time
 import ast
+import json
+import io
+import requests
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -113,6 +117,93 @@ def ojk_dataset_id_from_url(url):
         return matches[-1]
 
     return ""
+
+
+def _ojk_browser_diagnostics(driver):
+    """
+    Kumpulkan kondisi halaman dan request OJK yang gagal saat PivotGrid
+    tidak muncul. Tidak mengambil cookie, token, atau header autentikasi.
+    """
+    diagnostics = {}
+
+    try:
+        diagnostics["page"] = driver.execute_script(
+            """
+            const pivotElements = Array.from(
+                document.querySelectorAll(".dx-pivotgrid")
+            );
+            return {
+                url: location.href,
+                title: document.title || "",
+                readyState: document.readyState || "",
+                pivotElements: pivotElements.length,
+                devExpress: Boolean(window.DevExpress),
+                dxPivotGrid: Boolean(
+                    window.DevExpress &&
+                    window.DevExpress.ui &&
+                    window.DevExpress.ui.dxPivotGrid
+                ),
+                jquery: Boolean(window.jQuery),
+                bodyText: (
+                    document.body && document.body.innerText
+                    ? document.body.innerText.slice(0, 900)
+                    : ""
+                )
+            };
+            """
+        )
+    except Exception as error:
+        diagnostics["page_diagnostic_error"] = (
+            f"{type(error).__name__}: {str(error) or repr(error)}"
+        )
+
+    try:
+        entries = driver.get_log("performance")
+        request_urls = {}
+        failures = []
+
+        for entry in entries:
+            try:
+                envelope = json.loads(entry.get("message") or "{}")
+                event = envelope.get("message") or {}
+                method = event.get("method")
+                params = event.get("params") or {}
+                request_id = params.get("requestId")
+
+                if method == "Network.requestWillBeSent":
+                    request = params.get("request") or {}
+                    request_urls[request_id] = request.get("url") or ""
+
+                elif method == "Network.responseReceived":
+                    response = params.get("response") or {}
+                    request_url = response.get("url") or request_urls.get(
+                        request_id, ""
+                    )
+                    try:
+                        status = int(response.get("status") or 0)
+                    except (TypeError, ValueError):
+                        status = 0
+
+                    if status >= 400 and "ojk.go.id" in request_url.lower():
+                        failures.append(f"HTTP {status} {request_url}")
+
+                elif method == "Network.loadingFailed":
+                    request_url = request_urls.get(request_id, "")
+                    if "ojk.go.id" in request_url.lower():
+                        failures.append(
+                            f"NETWORK_FAILED {request_url}: "
+                            f"{params.get('errorText') or 'unknown'}"
+                        )
+            except Exception:
+                continue
+
+        diagnostics["network_errors"] = failures[:12]
+    except Exception as error:
+        diagnostics["network_log_error"] = (
+            f"{type(error).__name__}: {str(error) or repr(error)}"
+        )
+
+    return diagnostics
 
 
 def ojk_wait_for_pivotgrid(driver, timeout=45):
@@ -1965,7 +2056,7 @@ def ojk_extract_dataset_107_from_pivot(
 
 
 
-def scrape_ojk_dataset(
+def _scrape_ojk_dataset_pivot(
     url,
     tahun,
     description
@@ -2037,31 +2128,57 @@ def scrape_ojk_dataset(
             90
         )
 
-        driver.get(
-            url
-        )
+        print(f"    [OJK] Membuka halaman dataset: {url}")
 
-        WebDriverWait(
-            driver,
-            45
-        ).until(
-            lambda d:
-            d.execute_script(
-                "return document.readyState"
+        try:
+            driver.get(url)
+        except TimeoutException:
+            # Resource portal yang menggantung tidak harus menggagalkan
+            # pemeriksaan DOM jika sesi Chrome masih hidup.
+            print(
+                "    [OJK] Page-load timeout; menghentikan resource "
+                "yang menggantung dan memeriksa DOM."
             )
-            ==
-            "complete"
-        )
+            try:
+                driver.execute_script("window.stop();")
+            except Exception as stop_error:
+                diagnostics = _ojk_browser_diagnostics(driver)
+                raise RuntimeError(
+                    "Chrome terputus ketika membuka halaman OJK; "
+                    f"diagnostik={json.dumps(diagnostics, ensure_ascii=False)[:1800]}"
+                ) from stop_error
 
-        # OJK memuat pivot secara AJAX.
-        time.sleep(
-            8
-        )
+        try:
+            WebDriverWait(
+                driver,
+                30
+            ).until(
+                lambda d: d.execute_script(
+                    "return ['interactive', 'complete'].includes(document.readyState)"
+                )
+            )
+        except TimeoutException as error:
+            diagnostics = _ojk_browser_diagnostics(driver)
+            raise RuntimeError(
+                "Dokumen OJK tidak mencapai readyState interactive/complete; "
+                f"diagnostik={json.dumps(diagnostics, ensure_ascii=False)[:1800]}"
+            ) from error
 
-        ojk_wait_for_pivotgrid(
-            driver,
-            timeout=45
-        )
+        # OJK memuat PivotGrid secara AJAX.
+        time.sleep(8)
+
+        try:
+            ojk_wait_for_pivotgrid(
+                driver,
+                timeout=45
+            )
+        except TimeoutException as error:
+            diagnostics = _ojk_browser_diagnostics(driver)
+            raise RuntimeError(
+                "PivotGrid OJK tidak ditemukan setelah menunggu 45 detik. "
+                "Periksa apakah script DevExtreme atau endpoint data OJK gagal. "
+                f"diagnostik={json.dumps(diagnostics, ensure_ascii=False)[:2200]}"
+            ) from error
 
         fields_before = (
             ojk_get_pivot_fields(
@@ -2321,6 +2438,246 @@ def scrape_ojk_dataset(
         except Exception:
             pass
 
+
+
+# ============================================================
+# OJK ANNUAL PENSION-FUND PUBLICATION FALLBACK
+# ============================================================
+# PivotGrid remains the primary source. When its backend is unavailable,
+# Dataset 62 can be recovered from the official annual OJK publication.
+# URLs are source metadata, not indicator values. Extend this registry only
+# after verifying a new official OJK publication and its table structure.
+
+_OJK_PENSION_ARCHIVE_PDFS = {
+    2019: (
+        "https://ojk.go.id/id/kanal/iknb/data-dan-statistik/"
+        "dana-pensiun/Documents/Pages/Buku-Statistik-Dana-Pensiun-dan-Buku-Statistik-Jaminan-Sosial---Tahun-2019/"
+        "Buku%20Statistik%20Dana%20Pensiun%20Tahun%202019.pdf"
+    ),
+    2020: (
+        "https://www.ojk.go.id/id/kanal/iknb/data-dan-statistik/"
+        "dana-pensiun/Documents/Pages/Buku-Statistik-Dana-Pensiun-2020/"
+        "BUKU%20STATISTIK%20DANA%20PENSIUN%202020.pdf"
+    ),
+    2021: (
+        "https://www.ojk.go.id/id/kanal/iknb/data-dan-statistik/"
+        "dana-pensiun/Documents/Pages/Buku-Statistik-Dana-Pensiun-2021/"
+        "Buku%20Statistik%20Dana%20Pensiun%202021.pdf"
+    ),
+}
+
+
+def _ojk_archive_number_tokens(text):
+    """Extract Indonesian-formatted numeric tokens from extracted PDF text."""
+    return re.findall(
+        r"(?<![A-Za-z])(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?",
+        str(text or ""),
+    )
+
+
+def _ojk_find_province_total_asset_in_pdf_text(
+    page_text,
+    province="Kalimantan Selatan",
+):
+    """Read the Total Aset (Rp) value from an OJK province-summary row.
+
+    The annual appendix table columns are:
+      Province, Number of Pension Funds, Total Participants,
+      Total Asset (IDR), Total Net Asset (IDR), Total Investment (IDR).
+
+    Therefore the third numeric token after the exact province label is
+    Total Asset (Rp). We require a plausible rupiah amount to avoid treating
+    page numbers or row numbering as data.
+    """
+    text = str(page_text or "")
+    pattern = re.compile(re.escape(province), flags=re.IGNORECASE)
+
+    for match in pattern.finditer(text):
+        tail = text[match.end():match.end() + 500]
+        tokens = _ojk_archive_number_tokens(tail)
+        if len(tokens) < 3:
+            continue
+
+        # 1st token = number of funds; 2nd = participants;
+        # 3rd = Total Asset (Rp), not net asset or investment.
+        candidates = [parse_ojk_number(token) for token in tokens[:3]]
+        total_asset = candidates[2]
+        if total_asset is not None and total_asset >= 1_000_000_000:
+            return float(total_asset)
+
+    return None
+
+
+def ojk_extract_annual_pension_asset_from_pdf(
+    pdf_bytes,
+    province="Kalimantan Selatan",
+):
+    """Extract province Total Asset (Rp) from an official OJK annual PDF."""
+    try:
+        import pdfplumber
+    except ImportError as error:
+        raise RuntimeError(
+            "Fallback PDF OJK membutuhkan dependency pdfplumber. "
+            "Install dengan: pip install pdfplumber"
+        ) from error
+
+    if not pdf_bytes or not bytes(pdf_bytes).startswith(b"%PDF"):
+        raise RuntimeError("Respons arsip OJK bukan file PDF yang valid.")
+
+    matches = []
+    with pdfplumber.open(io.BytesIO(bytes(pdf_bytes))) as pdf:
+        for page_number, page in enumerate(pdf.pages, start=1):
+            page_text = page.extract_text() or ""
+            value = _ojk_find_province_total_asset_in_pdf_text(
+                page_text,
+                province=province,
+            )
+            if value is not None:
+                matches.append((page_number, value))
+
+    if not matches:
+        raise RuntimeError(
+            f"Baris '{province}' dengan kolom Total Aset (Rp) "
+            "tidak ditemukan dalam publikasi PDF OJK."
+        )
+
+    unique_values = []
+    for page_number, value in matches:
+        if not any(abs(value - old_value) < 0.01 for old_value in unique_values):
+            unique_values.append(value)
+
+    if len(unique_values) != 1:
+        raise RuntimeError(
+            "Publikasi OJK menghasilkan lebih dari satu kandidat Total Aset "
+            f"untuk {province}: {unique_values}"
+        )
+
+    return unique_values[0]
+
+
+def ojk_fetch_annual_pension_asset(
+    tahun,
+    province="Kalimantan Selatan",
+    timeout=(15, 90),
+):
+    """Download and parse an official OJK annual pension-fund publication.
+
+    Returns the amount in full rupiah. This function deliberately does not
+    cache failures and does not return zero for missing/unavailable data.
+    """
+    year = int(tahun)
+    pdf_url = _OJK_PENSION_ARCHIVE_PDFS.get(year)
+    if not pdf_url:
+        raise RuntimeError(
+            f"Belum ada metadata publikasi PDF OJK terverifikasi untuk tahun {year}. "
+            "PivotGrid tetap menjadi satu-satunya jalur untuk tahun tersebut."
+        )
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
+        ),
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
+        "Referer": "https://www.ojk.go.id/",
+    }
+
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(
+                pdf_url,
+                headers=headers,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            if not response.content.startswith(b"%PDF"):
+                raise RuntimeError(
+                    "OJK mengembalikan respons non-PDF "
+                    f"(content-type={response.headers.get('Content-Type', '-')})."
+                )
+
+            value_rupiah = ojk_extract_annual_pension_asset_from_pdf(
+                response.content,
+                province=province,
+            )
+            print(
+                f"    [OJK-ARCHIVE] Tahun={year}; provinsi={province}; "
+                f"Total Aset={format_id(value_rupiah)} rupiah; "
+                f"sumber=publikasi tahunan resmi OJK"
+            )
+            return value_rupiah
+
+        except Exception as error:
+            last_error = error
+            if attempt < 3:
+                wait_seconds = 2 ** (attempt - 1)
+                print(
+                    f"    [OJK-ARCHIVE] Percobaan {attempt}/3 gagal: "
+                    f"{type(error).__name__}: {error}; "
+                    f"ulang dalam {wait_seconds} detik."
+                )
+                time.sleep(wait_seconds)
+
+    raise RuntimeError(
+        f"Fallback publikasi tahunan OJK gagal untuk tahun {year}: "
+        f"{type(last_error).__name__}: {last_error}"
+    ) from last_error
+
+
+def scrape_ojk_dataset(url, tahun, description):
+    """Scrape OJK pension datasets with PivotGrid-first archive recovery.
+
+    Dataset 62:
+      1) Try the existing interactive PivotGrid/API implementation.
+      2) If PivotGrid/backend fails, recover Dataset 62 from a verified
+         official annual OJK PDF (currently 2020 and 2021).
+
+    Dataset 107 and all other existing behavior remain on the original path.
+    Output contract is unchanged: value in billion rupiah.
+    """
+    year = int(tahun)
+    dataset_id = ojk_dataset_id_from_url(url)
+    cache_key = ("ojk_getdata", dataset_id, year)
+
+    try:
+        return _scrape_ojk_dataset_pivot(
+            url=url,
+            tahun=year,
+            description=description,
+        )
+    except Exception as pivot_error:
+        if dataset_id != "62":
+            raise
+
+        print(
+            "    [OJK] PivotGrid gagal; mencoba fallback publikasi "
+            f"tahunan resmi OJK untuk tahun {year}. "
+            f"Penyebab PivotGrid: {type(pivot_error).__name__}: {pivot_error}"
+        )
+
+        try:
+            value_rupiah = ojk_fetch_annual_pension_asset(
+                tahun=year,
+                province="Kalimantan Selatan",
+            )
+            value_miliar = value_rupiah / 1_000_000_000
+            if value_miliar < 0:
+                raise RuntimeError("Nilai aset OJK dari PDF negatif.")
+
+            SCRAPE_CACHE[cache_key] = value_miliar
+            print(
+                f"    [OJK-ARCHIVE] Nilai miliar={format_id(value_miliar)}"
+            )
+            return value_miliar
+
+        except Exception as archive_error:
+            raise RuntimeError(
+                f"PivotGrid OJK gagal untuk tahun {year} dan fallback PDF "
+                f"juga gagal. PivotGrid={type(pivot_error).__name__}: "
+                f"{pivot_error}; Archive={type(archive_error).__name__}: "
+                f"{archive_error}"
+            ) from archive_error
 
 
 

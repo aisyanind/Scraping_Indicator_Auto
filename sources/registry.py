@@ -141,6 +141,10 @@ class AdapterSpec:
     clauses: tuple
     run: Callable[[AdapterContext], object]
     requires_legacy_dir: bool = False
+    # Adapter dengan source bundle memproses Sumber_1..3 dalam satu panggilan.
+    # prefer_direct melewati fetch generik sebelum handler khusus dijalankan.
+    handles_source_bundle: bool = False
+    prefer_direct: bool = False
 
     def matches(self, ctx: AdapterContext) -> bool:
         return any(clause.matches(ctx) for clause in self.clauses)
@@ -424,6 +428,8 @@ ADAPTERS: tuple = (
             ),
         ),
         run=_run_tbc,
+        handles_source_bundle=True,
+        prefer_direct=True,
     ),
     AdapterSpec(
         name="iklhd",
@@ -574,6 +580,18 @@ ADAPTERS: tuple = (
 
 
 # ---------------------------------------------------------------------------
+# Metadata adapter untuk orkestrasi
+# ---------------------------------------------------------------------------
+
+def matching_adapter_spec(ctx: AdapterContext):
+    """Kembalikan adapter prioritas pertama yang cocok dengan konteks."""
+    for spec in ADAPTERS:
+        if spec.matches(ctx):
+            return spec
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Pelaksanaan
 # ---------------------------------------------------------------------------
 
@@ -646,8 +664,14 @@ def _error_result(error, source, status="LEGACY_FAILED", confidence=0.0):
       - SOURCE_NEED_LOGIN / 401                 -> SUMBER_PERLU_LOGIN
       - SOURCE_LINK_TIDAK_LENGKAP               -> LINK_TIDAK_LENGKAP
     """
-    text = str(error)
-    first_line = text.splitlines()[0][:300]
+    text = str(error).strip()
+    if text:
+        first_line = text.splitlines()[0][:300]
+    else:
+        # Selenium TimeoutException sering memiliki str(error) kosong.
+        first_line = (
+            f"{type(error).__name__}: exception message kosong"
+        )
 
     detected = status
 
@@ -721,6 +745,11 @@ def run_adapters(ctx: AdapterContext, legacy_path=None):
             else:
                 value = spec.run(ctx)
         except Exception as error:
+            detail = str(error).strip() or repr(error)
+            print(
+                f"  [SOURCE ADAPTER] {spec.name} gagal: "
+                f"{type(error).__name__}: {detail[:500]}"
+            )
             return _error_result(error, spec.name)
 
         return _ok(value, spec.name)

@@ -15,7 +15,11 @@ from engine.formula import calculate_formula
 from engine.instructions import parse_instruction
 from engine.router import scrape_source_auto
 from models import IndicatorJob
-from sources.region_utils import normalize_region
+from sources.region_utils import normalize_region, regions_match
+from sources.registry import (
+    AdapterContext,
+    matching_adapter_spec,
+)
 
 
 def parse_years(value):
@@ -138,6 +142,69 @@ def _build_source_context(job, description):
     )
 
 
+def _validate_extracted_scope(extracted, source_context, wilayah, cakupan_wilayah):
+    """Prevent a one-region value from being reported as complete multi-region data."""
+    if extracted is None or extracted.status not in {"SUCCESS", "REVIEW"}:
+        return extracted
+
+    instruction = parse_instruction(
+        source_context,
+        default_wilayah=wilayah,
+        cakupan_wilayah=cakupan_wilayah,
+    )
+    expected = instruction.target_wilayahs or [wilayah]
+    if len(expected) <= 1:
+        return extracted
+
+    if isinstance(extracted.value, dict):
+        value_keys = list(extracted.value.keys())
+    elif extracted.value is not None:
+        # A scalar can only be assigned to the default region if that region
+        # is itself one of the requested targets. Never copy it to every area.
+        if any(regions_match(wilayah, target) for target in expected):
+            extracted.value = {wilayah: extracted.value}
+            value_keys = [wilayah]
+        else:
+            extracted.value = {}
+            value_keys = []
+    else:
+        value_keys = []
+
+    matched = [
+        target
+        for target in expected
+        if any(regions_match(key, target) for key in value_keys)
+    ]
+    missing = [target for target in expected if target not in matched]
+
+    evidence = list(extracted.evidence or [])
+    evidence.extend([
+        f"coverage_scope={instruction.coverage_scope or 'AUTO'}",
+        f"coverage_expected={len(expected)}",
+        f"coverage_matched={len(matched)}",
+    ])
+
+    if missing:
+        extracted.status = "REVIEW"
+        missing_text = ", ".join(missing)
+        note = (
+            f"Cakupan wilayah belum lengkap: {len(matched)}/{len(expected)} "
+            f"wilayah berhasil dicocokkan. Belum ditemukan: {missing_text}."
+        )
+        extracted.message = f"{extracted.message} | {note}" if extracted.message else note
+        evidence.append(f"coverage_missing={missing_text}")
+        print(
+            f"[SCOPE] INCOMPLETE: {len(matched)}/{len(expected)} wilayah; "
+            f"missing={missing_text}"
+        )
+    else:
+        evidence.append("coverage_complete=true")
+        print(f"[SCOPE] COMPLETE: {len(expected)}/{len(expected)} wilayah.")
+
+    extracted.evidence = list(dict.fromkeys(evidence))
+    return extracted
+
+
 def _complete_existing_years(job, years, source_specs, wilayah, records):
     """
     Return (skipped_years, existing_pairs).
@@ -160,6 +227,7 @@ def _complete_existing_years(job, years, source_specs, wilayah, records):
     expected_regions = parse_instruction(
         context,
         default_wilayah=wilayah,
+        cakupan_wilayah=job.cakupan_wilayah,
     ).target_wilayahs or [wilayah]
 
     existing_keys = set()
@@ -316,7 +384,27 @@ def process_indicator_job(
         (job.sumber_2, job.data_diambil_2),
         (job.sumber_3, job.data_diambil_3),
     ]
+    all_descriptions = " | ".join(
+        description
+        for _, description in source_specs
+        if str(description or "").strip()
+    )
+    scope_instruction = parse_instruction(
+        _build_source_context(job, all_descriptions),
+        default_wilayah=wilayah,
+        cakupan_wilayah=job.cakupan_wilayah,
+    )
+    expected_regions = scope_instruction.target_wilayahs or [wilayah]
+    print(
+        f"[SCOPE] {job.cakupan_wilayah or 'AUTO'} -> "
+        f"{len(expected_regions)} target wilayah: {expected_regions}"
+    )
+
     used_sources = _sources_in_formula(job.rumus)
+    tbc_coverage_indicator = (
+        "tuberkulosis" in str(job.nama_indikator or "").casefold()
+        or str(job.kode or "").strip().casefold() == "3.a"
+    )
     skipped_years, existing_pairs = _complete_existing_years(
         job,
         years,
@@ -324,6 +412,11 @@ def process_indicator_job(
         wilayah,
         existing_results,
     )
+    # TBC perlu selalu diperiksa ulang karena data PDF dapat memperbaiki
+    # nilai lama yang sebelumnya salah satuan (jumlah kasus vs persentase).
+    # Jangan lewati tahun hanya karena baris lama berstatus SUCCESS.
+    if tbc_coverage_indicator:
+        skipped_years = set()
 
     for tahun in sorted(skipped_years):
         diagnostics.append({
@@ -332,16 +425,63 @@ def process_indicator_job(
             "message": "Semua wilayah yang diminta sudah berstatus SUCCESS.",
         })
 
-    # Bangun semua kombinasi (tahun, sumber) yang perlu di-scrape.
+    # Adapter source-bundle memproses Sumber_1..3 dalam satu panggilan.
+    # Untuk rumus S1, sumber tambahan merupakan fallback/komplemen,
+    # sehingga jangan menjadwalkan adapter yang sama berulang per sumber.
+    bundle_spec = None
+    all_descriptions = " | ".join(
+        str(description).strip()
+        for _, description in source_specs
+        if str(description or "").strip()
+    )
+    if (
+        used_sources == {1}
+        and source_specs
+        and str(source_specs[0][0] or "").strip()
+        and years
+    ):
+        bundle_context = AdapterContext(
+            url=source_specs[0][0],
+            tahun=years[0],
+            description=_build_source_context(job, all_descriptions),
+            wilayah=wilayah,
+            kode=job.kode,
+            nama_indikator=job.nama_indikator,
+            sumber_2=job.sumber_2,
+            sumber_3=job.sumber_3,
+        )
+        candidate_spec = matching_adapter_spec(bundle_context)
+        if candidate_spec and candidate_spec.handles_source_bundle:
+            bundle_spec = candidate_spec
+
+    # Bangun task: satu per tahun untuk adapter bundle; selain itu
+    # pertahankan perilaku lama satu task per sumber.
     tasks = []
     for tahun in years:
         if tahun in skipped_years:
             continue
+
+        if bundle_spec is not None:
+            tasks.append((
+                tahun,
+                0,
+                source_specs[0][0],
+                all_descriptions,
+            ))
+            continue
+
         for index, (url, description) in enumerate(source_specs):
             if not url:
                 continue
-
             tasks.append((tahun, index, url, description))
+
+    print(
+        "[TASK-PLAN] "
+        f"used_sources={sorted(used_sources)} | "
+        f"bundle={bundle_spec.name if bundle_spec else 'NONE'} | "
+        f"years={len(years)} | skipped={len(skipped_years)} | "
+        f"tasks={len(tasks)}"
+    )
 
     total_tasks = max(1, len(tasks))
     progress_state = {
@@ -402,16 +542,30 @@ def process_indicator_job(
 
             try:
                 with limiter(url):
-                    extracted = scrape_source_auto(
-                        url=url,
-                        tahun=tahun,
-                        description=source_context,
-                        wilayah=wilayah,
-                        nama_indikator=job.nama_indikator,
-                        sumber_2=job.sumber_2,
-                        sumber_3=job.sumber_3,
-                    )
+                    scrape_kwargs = {
+                        "url": url,
+                        "tahun": tahun,
+                        "description": source_context,
+                        "wilayah": wilayah,
+                        "nama_indikator": job.nama_indikator,
+                        "sumber_2": job.sumber_2,
+                        "sumber_3": job.sumber_3,
+                    }
+                    if job.cakupan_wilayah:
+                        scrape_kwargs["cakupan_wilayah"] = job.cakupan_wilayah
+                    extracted = scrape_source_auto(**scrape_kwargs)
 
+                # Indikator cakupan TB 2024 pada PDF hanya menyediakan
+                # nilai tingkat provinsi. Jangan paksa hasil satu wilayah
+                # melewati validasi universal 14 wilayah; penanganan baris
+                # kab/kota kosong dilakukan secara eksplisit di bawah.
+                if not tbc_coverage_indicator:
+                    extracted = _validate_extracted_scope(
+                        extracted,
+                        source_context,
+                        wilayah,
+                        job.cakupan_wilayah,
+                    )
                 last_error = None
 
                 completed_pdf_parse = (
@@ -568,6 +722,9 @@ def process_indicator_job(
             return True
         return False
 
+    # Untuk indikator TBC, hasil REVIEW dari PDF hanya memiliki nilai
+    # persentase provinsi. Baris kab/kota harus ditulis ulang sebagai kosong
+    # agar nilai jumlah kasus lama tidak tertinggal pada indikator (%).
     for tahun in years:
         if tahun in skipped_years:
             continue
@@ -576,8 +733,9 @@ def process_indicator_job(
             status == "REVIEW"
             for status in year_statuses[tahun]
         ):
-            for region in _regions(wilayah, None, None, None):
-                if _skip_existing(tahun, region):
+            s1, s2, s3 = year_values[tahun]
+            for region in expected_regions:
+                if not tbc_coverage_indicator and _skip_existing(tahun, region):
                     continue
 
                 results.append({
@@ -585,9 +743,9 @@ def process_indicator_job(
                     "nama_indikator": job.nama_indikator,
                     "wilayah": region,
                     "tahun": tahun,
-                    "nilai_s1": None,
-                    "nilai_s2": None,
-                    "nilai_s3": None,
+                    "nilai_s1": _round3(_value_for_region(s1, region)),
+                    "nilai_s2": _round3(_value_for_region(s2, region)),
+                    "nilai_s3": _round3(_value_for_region(s3, region)),
                     "hasil": "-",
                     "status": "REVIEW",
                     "error": "",
@@ -605,7 +763,7 @@ def process_indicator_job(
                 break
 
         if source_failed:
-            for region in _regions(wilayah, None, None, None):
+            for region in expected_regions:
                 if _skip_existing(tahun, region):
                     continue
 
@@ -624,6 +782,64 @@ def process_indicator_job(
             continue
 
         s1, s2, s3 = year_values[tahun]
+
+        # Khusus indikator 3.a: pertahankan satuan persentase.
+        # Tahun 2024 PDF hanya memiliki nilai Provinsi Kalsel (84,0%).
+        # Tetap tulis seluruh target wilayah agar nilai jumlah kasus lama
+        # terhapus: provinsi SUCCESS, kab/kota tanpa data DATA_TIDAK_ADA.
+        if tbc_coverage_indicator:
+            for region in expected_regions:
+                r1 = _value_for_region(s1, region)
+                r2 = _value_for_region(s2, region)
+                r3 = _value_for_region(s3, region)
+
+                missing_required_source = any(
+                    year_values[tahun][slot - 1] is None
+                    or _value_for_region(year_values[tahun][slot - 1], region) is None
+                    for slot in used_sources
+                )
+                if missing_required_source:
+                    results.append({
+                        "kode": job.kode,
+                        "nama_indikator": job.nama_indikator,
+                        "wilayah": region,
+                        "tahun": tahun,
+                        "nilai_s1": _round3(r1),
+                        "nilai_s2": _round3(r2),
+                        "nilai_s3": _round3(r3),
+                        "hasil": "-",
+                        "status": "DATA_TIDAK_ADA",
+                        "error": "Sumber tidak menyediakan nilai cakupan TB untuk wilayah ini.",
+                    })
+                    continue
+
+                try:
+                    hasil = calculate_formula(
+                        job.rumus,
+                        {"S1": r1, "S2": r2, "S3": r3},
+                    )
+                except Exception as error:
+                    diagnostics.append({
+                        "tahun": tahun,
+                        "wilayah": region,
+                        "status": "FAILED_FORMULA",
+                        "message": str(error),
+                    })
+                    continue
+
+                results.append({
+                    "kode": job.kode,
+                    "nama_indikator": job.nama_indikator,
+                    "wilayah": region,
+                    "tahun": tahun,
+                    "nilai_s1": _round3(r1),
+                    "nilai_s2": _round3(r2),
+                    "nilai_s3": _round3(r3),
+                    "hasil": _round3(hasil),
+                    "status": "SUCCESS",
+                    "error": "",
+                })
+            continue
 
         region_targets = _regions(
             wilayah,
@@ -750,6 +966,7 @@ def process_indicator_job(
         expected_regions = parse_instruction(
             _build_source_context(job, descriptions),
             default_wilayah=wilayah,
+            cakupan_wilayah=job.cakupan_wilayah,
         ).target_wilayahs or [wilayah]
         failure_summary = _build_failure_summary(
             diagnostics,

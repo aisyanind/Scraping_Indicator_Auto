@@ -25,6 +25,7 @@ from models import (
     ExtractionResult,
 )
 from sources.legacy_bridge import try_legacy_source
+from sources.registry import AdapterContext, matching_adapter_spec
 from sources.bps_utils import (
     extract_table_year,
     parse_number_id,
@@ -340,10 +341,12 @@ def scrape_source_auto(
     nama_indikator=None,
     sumber_2=None,
     sumber_3=None,
+    cakupan_wilayah=None,
 ):
     instruction = parse_instruction(
         description,
         default_wilayah=wilayah,
+        cakupan_wilayah=cakupan_wilayah,
     )
 
     # Untuk halaman BPS: selalu bawa ?year=<tahun> supaya payload
@@ -352,9 +355,73 @@ def scrape_source_auto(
     if _is_bps_url(url):
         fetch_url = with_year_param(url, tahun)
 
+    # Adapter yang secara eksplisit menandai prefer_direct tidak perlu
+    # melewati fetch/deteksi generik terlebih dahulu. Ini menghindari
+    # request halaman yang tidak digunakan oleh parser khusus.
+    adapter_context = AdapterContext(
+        url=url,
+        tahun=tahun,
+        description=description,
+        wilayah=wilayah,
+        kode=kode,
+        nama_indikator=nama_indikator,
+        sumber_2=sumber_2,
+        sumber_3=sumber_3,
+    )
+    preferred_spec = matching_adapter_spec(adapter_context)
+    if preferred_spec and preferred_spec.prefer_direct:
+        direct_result = try_legacy_source(
+            url=url,
+            tahun=tahun,
+            description=description,
+            wilayah=wilayah,
+            kode=kode,
+            nama_indikator=nama_indikator,
+            sumber_2=sumber_2,
+            sumber_3=sumber_3,
+        )
+        if direct_result is not None:
+            return _normalize_status(direct_result)
+
     try:
         payload = fetch_and_detect(fetch_url)
     except requests.RequestException:
+        # Pemulihan khusus URL tabel BPS:
+        # fetch generik dapat gagal (mis. HTTP 525), tetapi adapter BPS
+        # masih dapat mengambil data melalui endpoint/network capture.
+        # Jalur ini hanya berlaku untuk URL statistics-table BPS sehingga
+        # perilaku sumber non-BPS tetap tidak berubah.
+        bps_table_result = None
+        if _is_bps_url(url):
+            table_path = urlparse(str(url or "")).path.lower()
+            is_bps_table = "/statistics-table/" in table_path
+            if is_bps_table:
+                from sources.bps_table_adapter import try_bps_table
+
+                table_kwargs = {
+                    "url": fetch_url,
+                    "tahun": tahun,
+                    "description": description,
+                    "wilayah": wilayah,
+                    "nama_indikator": nama_indikator,
+                }
+                if cakupan_wilayah:
+                    table_kwargs["cakupan_wilayah"] = cakupan_wilayah
+
+                try:
+                    bps_table_result = try_bps_table(**table_kwargs)
+                except requests.RequestException:
+                    # Jika adapter juga mengalami kegagalan jaringan,
+                    # lanjutkan ke fallback legacy di bawah.
+                    bps_table_result = None
+
+                if bps_table_result is not None and bps_table_result.status in {
+                    "SUCCESS",
+                    "REVIEW",
+                    "DATA_TIDAK_ADA",
+                }:
+                    return _normalize_status(bps_table_result)
+
         legacy = try_legacy_source(
             url=url,
             tahun=tahun,
@@ -374,6 +441,13 @@ def scrape_source_auto(
             "SUMBER_TERBLOKIR",
         }:
             return legacy
+
+        # Jika adapter BPS memberi diagnosis yang lebih spesifik daripada
+        # fetch generik, kembalikan diagnosis tersebut alih-alih kehilangan
+        # konteks dengan melempar HTTP error awal.
+        if bps_table_result is not None:
+            return _normalize_status(bps_table_result)
+
         raise
 
     brin_result = None
@@ -411,13 +485,16 @@ def scrape_source_auto(
         )
         if "/statistics-table/" in table_path or is_bps_table_listing:
             from sources.bps_table_adapter import try_bps_table
-            template_result = try_bps_table(
-                url=fetch_url,
-                tahun=tahun,
-                description=description,
-                wilayah=wilayah,
-                nama_indikator=nama_indikator,
-            )
+            table_kwargs = {
+                "url": fetch_url,
+                "tahun": tahun,
+                "description": description,
+                "wilayah": wilayah,
+                "nama_indikator": nama_indikator,
+            }
+            if cakupan_wilayah:
+                table_kwargs["cakupan_wilayah"] = cakupan_wilayah
+            template_result = try_bps_table(**table_kwargs)
             if template_result is not None:
                 if template_result.status in {
                     "SUCCESS",
